@@ -1,0 +1,8 @@
+<settings>
+    <setting propertyKey="@Properties.Code" title="@Strings.SettingsCode">
+        <settingConfig type="alphaNumeric" required="true" />
+    </setting>
+    <setting propertyKey="@Properties.CodeDescription" title="@Strings.SettingsCodeDescription">
+        <settingConfig type="alphaNumeric" required="true" />
+    </setting>
+</settings>

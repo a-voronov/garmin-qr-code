@@ -1,0 +1,6 @@
+<properties>
+	<property id="Code" type="string"></property>
+    <property id="CodeDescription" type="string"></property>
+
+    <property id="CachedCode" type="string"></property>
+</properties>

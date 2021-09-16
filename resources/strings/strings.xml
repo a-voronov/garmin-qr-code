@@ -1,0 +1,12 @@
+<strings>
+    <string id="AppName">QRCode</string>
+
+    <string id="AddCodePrompt">Add New Code from IQ Connect</string>
+    <string id="ErrorPrompt">Error</string>
+    <string id="ProcessingPrompt">Processing...</string>
+
+    <string id="MenuClearCache">Clear Cache</string>
+
+    <string id="SettingsCode">Code</string>
+    <string id="SettingsCodeDescription">Code Description</string>
+</strings>
