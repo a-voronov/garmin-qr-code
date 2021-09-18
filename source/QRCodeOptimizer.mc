@@ -1,3 +1,4 @@
+import Toybox.Lang;
 import Toybox.Math;
 import Toybox.Timer;
 
@@ -75,36 +76,36 @@ class QRCodeOptimizer {
     }
 
     function _iterate() as Void {
-        System.println("iteration: " + mIteration);
         var string = "";
         var row = mIteration * 4;
         for (var column = 0; column < mInput[row].size(); column += 1) {
             // Creating vertical 4-char column for each item in a row
             var char = [
-                _itemOrDefault(mInput, row + 0, column, true), 
-                _itemOrDefault(mInput, row + 1, column, true), 
-                _itemOrDefault(mInput, row + 2, column, true), 
-                _itemOrDefault(mInput, row + 3, column, true)
+                _itemOrDefault(mInput, row + 0, column, '0'),
+                _itemOrDefault(mInput, row + 1, column, '0'),
+                _itemOrDefault(mInput, row + 2, column, '0'),
+                _itemOrDefault(mInput, row + 3, column, '0')
             ];
             // Matching vertical 4-char column with corresponding hex-symbol
-            if      (_equals(char, [true,  true, true,   true]))  { string += "f"; } 
-            else if (_equals(char, [true,  true,  true,  false])) { string += "e"; } 
-            else if (_equals(char, [true,  true,  false, true]))  { string += "d"; } 
-            else if (_equals(char, [true,  true,  false, false])) { string += "c"; } 
-            else if (_equals(char, [true,  false, true,  true]))  { string += "b"; } 
-            else if (_equals(char, [true,  false, true,  false])) { string += "a"; } 
-            else if (_equals(char, [true,  false, false, true]))  { string += "9"; } 
-            else if (_equals(char, [true,  false, false, false])) { string += "8"; } 
-            else if (_equals(char, [false, true,  true,  true]))  { string += "7"; } 
-            else if (_equals(char, [false, true,  true,  false])) { string += "6"; } 
-            else if (_equals(char, [false, true,  false, true]))  { string += "5"; } 
-            else if (_equals(char, [false, true,  false, false])) { string += "4"; } 
-            else if (_equals(char, [false, false, true,  true]))  { string += "3"; } 
-            else if (_equals(char, [false, false, true,  false])) { string += "2"; } 
-            else if (_equals(char, [false, false, false, true]))  { string += "1"; } 
-            else if (_equals(char, [false, false, false, false])) { string += "0"; }
+            if      (_equals(char, ['0', '0', '0', '0'])) { string += "f"; }
+            else if (_equals(char, ['0', '0', '0', '1'])) { string += "e"; }
+            else if (_equals(char, ['0', '0', '1', '0'])) { string += "d"; }
+            else if (_equals(char, ['0', '0', '1', '1'])) { string += "c"; }
+            else if (_equals(char, ['0', '1', '0', '0'])) { string += "b"; }
+            else if (_equals(char, ['0', '1', '0', '1'])) { string += "a"; }
+            else if (_equals(char, ['0', '1', '1', '0'])) { string += "9"; }
+            else if (_equals(char, ['0', '1', '1', '1'])) { string += "8"; }
+            else if (_equals(char, ['1', '0', '0', '0'])) { string += "7"; }
+            else if (_equals(char, ['1', '0', '0', '1'])) { string += "6"; }
+            else if (_equals(char, ['1', '0', '1', '0'])) { string += "5"; }
+            else if (_equals(char, ['1', '0', '1', '1'])) { string += "4"; }
+            else if (_equals(char, ['1', '1', '0', '0'])) { string += "3"; }
+            else if (_equals(char, ['1', '1', '0', '1'])) { string += "2"; }
+            else if (_equals(char, ['1', '1', '1', '0'])) { string += "1"; }
+            else if (_equals(char, ['1', '1', '1', '1'])) { string += "0"; }
             else {
-                return _finish(INVALID_INPUT);
+                _finish(INVALID_INPUT);
+                return;
             }
         }
         mResult.add(string);

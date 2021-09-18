@@ -1,43 +1,47 @@
 import Toybox.Application;
 import Toybox.Lang;
-import Toybox.WatchUi;
 
 class QRCodeApp extends Application.AppBase {
     private var mOptimizer as QRCodeOptimizer;
+    private var mBuilder as QRCodeBuilder;
+
     private const mCode as Array? = [
-        [true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,false,false,false,false,false,false,false,true,true,false,true,false,true,true,false,false,false,false,false,false,false,true,true,true,true,],
-        [true,true,true,true,false,true,true,true,true,true,false,true,true,false,false,true,true,true,false,true,true,true,true,true,false,true,true,true,true,],
-        [true,true,true,true,false,true,false,false,false,true,false,true,false,false,false,true,true,true,false,true,false,false,false,true,false,true,true,true,true,],
-        [true,true,true,true,false,true,false,false,false,true,false,true,false,false,true,false,true,true,false,true,false,false,false,true,false,true,true,true,true,],
-        [true,true,true,true,false,true,false,false,false,true,false,true,true,false,false,true,false,true,false,true,false,false,false,true,false,true,true,true,true,],
-        [true,true,true,true,false,true,true,true,true,true,false,true,true,false,true,true,false,true,false,true,true,true,true,true,false,true,true,true,true,],
-        [true,true,true,true,false,false,false,false,false,false,false,true,false,true,false,true,false,true,false,false,false,false,false,false,false,true,true,true,true,],
-        [true,true,true,true,true,true,true,true,true,true,true,true,true,false,true,false,true,true,true,true,true,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,true,true,true,false,false,true,false,false,true,true,true,true,true,true,true,true,true,false,false,true,true,true,true,true,true,],
-        [true,true,true,true,false,false,true,false,true,false,true,true,false,true,true,true,true,true,false,false,false,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,false,false,false,false,false,false,false,true,false,false,true,false,false,false,true,false,true,true,true,true,false,true,true,true,true,],
-        [true,true,true,true,true,false,true,true,false,true,true,true,true,false,false,false,false,true,true,false,false,true,false,false,true,true,true,true,true,],
-        [true,true,true,true,false,true,true,false,false,true,false,true,true,true,true,false,true,true,false,false,false,false,true,false,false,true,true,true,true,],
-        [true,true,true,true,true,true,true,true,true,true,true,true,false,false,false,false,true,false,false,true,true,true,false,false,true,true,true,true,true,],
-        [true,true,true,true,false,false,false,false,false,false,false,true,false,false,false,true,true,true,false,true,true,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,false,true,true,true,true,true,false,true,true,true,false,false,true,false,false,true,true,true,false,false,true,true,true,true,true,],
-        [true,true,true,true,false,true,false,false,false,true,false,true,false,true,true,true,false,true,true,true,false,false,false,true,false,true,true,true,true,],
-        [true,true,true,true,false,true,false,false,false,true,false,true,false,true,true,true,true,false,false,false,false,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,false,true,false,false,false,true,false,true,true,false,true,true,false,false,true,false,false,false,true,false,false,true,true,true,true,],
-        [true,true,true,true,false,true,true,true,true,true,false,true,true,false,true,true,true,true,false,false,true,false,true,false,false,true,true,true,true,],
-        [true,true,true,true,false,false,false,false,false,false,false,true,true,true,false,true,true,false,true,false,false,true,false,true,true,true,true,true,true,],
-        [true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,],
-        [true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,],
+        ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','1','1','1','1','1','1','1','0','0','1','0','1','0','0','1','1','1','1','1','1','1','0','0','0','0',],
+        ['0','0','0','0','1','0','0','0','0','0','1','0','0','1','1','0','0','0','1','0','0','0','0','0','1','0','0','0','0',],
+        ['0','0','0','0','1','0','1','1','1','0','1','0','1','1','1','0','0','0','1','0','1','1','1','0','1','0','0','0','0',],
+        ['0','0','0','0','1','0','1','1','1','0','1','0','1','1','0','1','0','0','1','0','1','1','1','0','1','0','0','0','0',],
+        ['0','0','0','0','1','0','1','1','1','0','1','0','0','1','1','0','1','0','1','0','1','1','1','0','1','0','0','0','0',],
+        ['0','0','0','0','1','0','0','0','0','0','1','0','0','1','0','0','1','0','1','0','0','0','0','0','1','0','0','0','0',],
+        ['0','0','0','0','1','1','1','1','1','1','1','0','1','0','1','0','1','0','1','1','1','1','1','1','1','0','0','0','0',],
+        ['0','0','0','0','0','0','0','0','0','0','0','0','0','1','0','1','0','0','0','0','0','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','0','0','0','1','1','0','1','1','0','0','0','0','0','0','0','0','0','1','1','0','0','0','0','0','0',],
+        ['0','0','0','0','1','1','0','1','0','1','0','0','1','0','0','0','0','0','1','1','1','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','1','1','1','1','1','1','1','0','1','1','0','1','1','1','0','1','0','0','0','0','1','0','0','0','0',],
+        ['0','0','0','0','0','1','0','0','1','0','0','0','0','1','1','1','1','0','0','1','1','0','1','1','0','0','0','0','0',],
+        ['0','0','0','0','1','0','0','1','1','0','1','0','0','0','0','1','0','0','1','1','1','1','0','1','1','0','0','0','0',],
+        ['0','0','0','0','0','0','0','0','0','0','0','0','1','1','1','1','0','1','1','0','0','0','1','1','0','0','0','0','0',],
+        ['0','0','0','0','1','1','1','1','1','1','1','0','1','1','1','0','0','0','1','0','0','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','1','0','0','0','0','0','1','0','0','0','1','1','0','1','1','0','0','0','1','1','0','0','0','0','0',],
+        ['0','0','0','0','1','0','1','1','1','0','1','0','1','0','0','0','1','0','0','0','1','1','1','0','1','0','0','0','0',],
+        ['0','0','0','0','1','0','1','1','1','0','1','0','1','0','0','0','0','1','1','1','1','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','1','0','1','1','1','0','1','0','0','1','0','0','1','1','0','1','1','1','0','1','1','0','0','0','0',],
+        ['0','0','0','0','1','0','0','0','0','0','1','0','0','1','0','0','0','0','1','1','0','1','0','1','1','0','0','0','0',],
+        ['0','0','0','0','1','1','1','1','1','1','1','0','0','0','1','0','0','1','0','1','1','0','1','0','0','0','0','0','0',],
+        ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',],
+        ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',],
     ] as Array?;
 
     function initialize() {
         AppBase.initialize();
+
+        mBuilder = new QRCodeBuilder("a", QRCodeBuilder.L);
+        // mBuilder.build();
 
         mOptimizer = new QRCodeOptimizer(mCode);
     }

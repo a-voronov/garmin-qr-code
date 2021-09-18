@@ -10,10 +10,10 @@ class QRCodeView extends WatchUi.View {
     private var mProcessingImg as BitmapResource;
 
     private var mFonts = [16];
-    private var mOptimizer as QRCodeOptimizer;
+    private var mOptimizer as QRCodeOptimizable;
     private var mProgressBar as WatchUi.ProgressBar?;
 
-    function initialize(optimizer as QRCodeOptimizer) {
+    function initialize(optimizer as QRCodeOptimizable) {
         View.initialize();
         mOptimizer = optimizer;
 
@@ -61,8 +61,6 @@ class QRCodeView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_WHITE);
         dc.clear();
 
-        System.println("update");
-
         if (Application has :Storage) {
             var cachedCode = Application.Storage.getValue(mCacheKey);
             if (cachedCode != null) {
@@ -78,7 +76,7 @@ class QRCodeView extends WatchUi.View {
 
         if (mOptimizer.getStatus() == QRCodeOptimizer.FINISHED) {
             _drawQRText(mOptimizer.getResult(), dc);
-        }    
+        }
     }
 
     private function _drawQRText(result as QRCodeOptimizer.Result or Float or Null, dc as DC) as Void {
