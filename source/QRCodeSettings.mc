@@ -36,4 +36,8 @@ module QRCodeSettings {
     function getProcessingTimeInterval() as Number {
         return 100;
     }
+
+    function getBuildingTimeInterval() as Number {
+        return 5000;
+    }
 }

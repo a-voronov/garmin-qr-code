@@ -1,4 +1,5 @@
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.StringUtil;
 import Toybox.Timer;
 

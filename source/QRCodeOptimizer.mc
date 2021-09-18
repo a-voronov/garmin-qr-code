@@ -148,6 +148,7 @@ class QRCodeOptimizer {
         }
         System.println("optimizer finished");
         mTimer.stop();
+        mTimer = null;
         mStatus = FINISHED;
         mResult = result;
         mObservable.notify({ :status => mStatus, :payload => result });

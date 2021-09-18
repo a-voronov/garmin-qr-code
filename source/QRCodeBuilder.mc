@@ -1,4 +1,5 @@
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.Timer;
 
 class QRCodeBuilder {
@@ -6,9 +7,7 @@ class QRCodeBuilder {
         // Associates with null payload
         IDLE, STOPPED,
         // Associates with Float (0-100) payload
-        STARTED_BUILDING_DATA,
-        STARTED_BUILDING_CODE,
-        STARTED_PICKING_MASK,
+        STARTED,
         // Associates with Result payload
         FINISHED
     }
@@ -16,7 +15,9 @@ class QRCodeBuilder {
     enum Error {
         INVALID_INPUT,
         ALREADY_STARTED,
-        UNKNOWN
+        UNKNOWN,
+
+        TEST = 42
     }
 
     enum Mode {
@@ -31,6 +32,28 @@ class QRCodeBuilder {
         M = 15,
         Q = 25,
         H = 30
+    }
+
+    enum Progress {
+        // Payload: {}
+        ADD_DATA_PREPARE,
+        // Payload: {}
+        ADD_DATA_ENCODE,
+        // Payload: {}
+        ADD_DATA_TERMINATE_BITS_AND_PROCESS_WORDS,
+        // Payload: {}
+        ADD_DATA_NUMERIC_REPRESENTATION,
+        // Payload: { :data as Numbers }
+        ADD_DATA_DATA_BLOCKS,
+        // Payload: { :errorInfo as Numbers, :dataBlocks as Array<NumbersOrNulls>, :errorBlocks as Array<Numbers> }
+        ADD_DATA_DATA_BLOCKS_INTO_BUFFER,
+
+        // Payload: {}
+        MAKE_CODE_ADD_PATTERNS,
+        // Payload: { :template as CodeData }
+        MAKE_CODE_MAKE_MASKS,
+        // Payload: {}
+        MAKE_CODE_CHOOSE_BEST_MASK
     }
 
     typedef Numbers as Array<Number>;
@@ -49,7 +72,8 @@ class QRCodeBuilder {
 
     private var mObservable as Observable;
     private var mTimer as Timer?;
-    private var mIteration as Numer;
+    private var mProgress as Progress?;
+    private var mProgressPayload as Dictionary;
 
     private var mStatus as Status;
     private var mData as String?;
@@ -73,9 +97,7 @@ class QRCodeBuilder {
         switch (mStatus) {
             case IDLE:
                 return null;
-            case STARTED_BUILDING_DATA:
-            case STARTED_BUILDING_CODE:
-            case STARTED_PICKING_MASK:
+            case STARTED:
                 return _progress();
             case FINISHED:
                 if (mStatusError != null) {
@@ -106,16 +128,10 @@ class QRCodeBuilder {
         // Create the binary data block.
         // And with this, create the actual QR code.
         mData = "";
-        try {
-            _addData();
-        } catch (e instanceof Lang.SerializationException) {
-            _finish(INVALID_INPUT);
-            return null; // ???
-        } catch (e) {
-            _finish(UNKNOWN);
-            return null; // ???
-        }
-        _makeCode();
+        mProgress = 0;
+        mStatus = STARTED;
+        mTimer = new Timer.Timer();
+        mTimer.start(method(:_iterate), QRCodeSettings.getBuildingTimeInterval(), true);
         return null;
     }
 
@@ -126,8 +142,9 @@ class QRCodeBuilder {
         System.println("builder stopped");
         mTimer.stop();
         mTimer = null;
+        mProgress = null;
+        mProgressPayload = {};
         mStatus = STOPPED;
-        mIteration = 0;
 
         mData = null;
         mMasks = null;
@@ -143,6 +160,9 @@ class QRCodeBuilder {
         }
         System.println("builder finished");
         mTimer.stop();
+        mTimer = null;
+        mProgress = null;
+        mProgressPayload = {};
         mStatus = FINISHED;
         mStatusError = error;
 
@@ -150,103 +170,180 @@ class QRCodeBuilder {
     }
 
     private function _progress() as Float {
-        return 42;//(mIteration.toFloat() / Math.ceil(mInput.size() / 4)) * 100;
+        return (mProgress.toFloat() / 9) * 100;
     }
 
     // ***************************************************************
     // *                          ADD DATA                           *
     // ***************************************************************
 
+    function _iterate() as Void {
+        switch (mProgress) {
+            case ADD_DATA_PREPARE:
+            case ADD_DATA_ENCODE:
+            case ADD_DATA_TERMINATE_BITS_AND_PROCESS_WORDS:
+            case ADD_DATA_NUMERIC_REPRESENTATION:
+            case ADD_DATA_DATA_BLOCKS:
+            case ADD_DATA_DATA_BLOCKS_INTO_BUFFER:
+                try {
+                    _iterateAddData();
+                } catch (e instanceof Lang.SerializationException) {
+                    _finish(INVALID_INPUT);
+                    return;
+                } catch (e) {
+                    _finish(UNKNOWN);
+                    return;
+                }
+                break;
+
+            case MAKE_CODE_ADD_PATTERNS:
+            case MAKE_CODE_MAKE_MASKS:
+            case MAKE_CODE_CHOOSE_BEST_MASK:
+                _iterateMakeCode();
+                break;
+        }
+        mObservable.notify({ :status => mStatus, :payload => _progress() });
+        mProgress += 1;
+        _finishIfNeeded();
+    }
+
+    private function _finishIfNeeded() as Void {
+        if (mProgress >= 9) {
+            _finish(null);
+        }
+    }
+
     //! This function properly constructs a QR code's data string.
     //! It takes into account the interleaving pattern required by the standard.
-    private function _addData() as Void {
-        // Encode the data into a QR code
-        mData += _binaryString(mMode, 4);
-        mData += _dataLength();
-        mData += _encodeAlphaNumeric();
-        // As per the standard, terminating bits are only supposed to be added after the bit stream is complete
-        var bits = _terminateBits(mData);
-        if (bits != null) {
-            mData += bits;
-        }
-        // _delimitWords and _addWords can return Null
-        var addBits = _delimitWords();
-        if (addBits != null) {
-            mData += addBits;
-        }
-        var fillBytes = _addWords();
-        if (fillBytes != null) {
-            mData += fillBytes;
-        }
-        // Get a numeric representation of the data
-        var data as Numbers = [];
-        var chunks as Array<CodeBlock> = _grouped(8, mData.toCharArray(), null);
-        for (var i = 0; i < chunks.size(); i += 1) {
-            var chunk = chunks[i];
-            var string = "";
-            for (var c = 0; c < chunk.size(); c += 1) {
-                string += chunk[c].toString();
+    private function _iterateAddData() as Void {
+        switch (mProgress) {
+            case ADD_DATA_PREPARE: {
+                System.println("ADD_DATA_PREPARE");
+                // Encode the data into a QR code
+                mData += _binaryString(mMode, 4);
+                mData += _dataLength();
+                mProgressPayload = {};
+                break;
             }
-            data.add(string.toNumberWithBase(2));
-        }
-        // This is the error information for the code
-        var errorInfo as Numbers = QRCodeTables.eccwbi[mVersion][QRCodeTables.error[mError]];
-        // This will hold our data blocks
-        var dataBlocks as Array<NumbersOrNulls> = [];
-        // This will hold our error blocks
-        var errorBlocks as Array<Numbers> = [];
-        // Some codes have the data sliced into two different sized blocks
-        // for example, first two 14 word sized blocks, then four 15 word sized blocks.
-        // This means that slicing size can change over time.
-        var dataBlockSizes as Numbers = [];
-        for (var i = 0; i < errorInfo[1]; i += 1) {
-            dataBlockSizes.add(errorInfo[2]);
-        }
-        if (errorInfo[3] != 0) {
-            for (var i = 0; i < errorInfo[3]; i += 1) {
-                dataBlockSizes.add(errorInfo[4]);
+
+            case ADD_DATA_ENCODE: {
+                System.println("ADD_DATA_ENCODE");
+                mData += _encodeAlphaNumeric();
+                mProgressPayload = {};
+                break;
             }
-        }
-        // For every block of data, slice the data into the appropriate sized block
-        var currentByte = 0;
-        for (var i = 0; i < dataBlockSizes.size(); i += 1) {
-            var nDataBlocks = dataBlockSizes[i];
-            dataBlocks.add(data.slice(currentByte, currentByte + nDataBlocks));
-            currentByte += nDataBlocks;
-        }
-        if (currentByte < data.size()) {
-            throw new Lang.SerializationException("Too much data for this code version.");
-        }
-        // Calculate the error blocks
-        for (var i = 0; i < dataBlocks.size(); i += 1) {
-            var block = dataBlocks[i];
-            errorBlocks.add(_makeErrorBlock(block, i));
-        }
-        // Buffer we will write our data blocks into
-        var result = "";
-        // Add the data blocks
-        // Write the buffer such that: block 1 byte 1, block 2 byte 1, etc.
-        var largestBlock = (errorInfo[2] < errorInfo[4] ? errorInfo[4] : errorInfo[2]) + errorInfo[0];
-        for (var i = 0; i < largestBlock; i += 1) {
-            for (var b = 0; b < dataBlocks.size(); b += 1) {
-                var block = dataBlocks[b];
-                if (i < block.size()) {
-                    var blockItem = block[i];
-                    if (blockItem != null) {
-                        result += _binaryString(blockItem, 8);
+
+            case ADD_DATA_TERMINATE_BITS_AND_PROCESS_WORDS: {
+                System.println("ADD_DATA_TERMINATE_BITS_AND_PROCESS_WORDS");
+                // As per the standard, terminating bits are only supposed to be added after the bit stream is complete
+                var bits = _terminateBits(mData);
+                if (bits != null) {
+                    mData += bits;
+                }
+                // _delimitWords and _addWords can return Null
+                var addBits = _delimitWords();
+                if (addBits != null) {
+                    mData += addBits;
+                }
+                var fillBytes = _addWords();
+                if (fillBytes != null) {
+                    mData += fillBytes;
+                }
+                mProgressPayload = {};
+                break;
+            }
+
+            case ADD_DATA_NUMERIC_REPRESENTATION: {
+                System.println("ADD_DATA_NUMERIC_REPRESENTATION");
+                // Get a numeric representation of the data
+                var data as Numbers = [];
+                var chunks as Array<CodeBlock> = _grouped(8, mData.toCharArray(), null);
+                for (var i = 0; i < chunks.size(); i += 1) {
+                    var chunk = chunks[i];
+                    var string = "";
+                    for (var c = 0; c < chunk.size(); c += 1) {
+                        string += chunk[c].toString();
+                    }
+                    data.add(string.toNumberWithBase(2));
+                }
+                mProgressPayload = { :data => data };
+                break;
+            }
+
+            case ADD_DATA_DATA_BLOCKS: {
+                System.println("ADD_DATA_DATA_BLOCKS");
+                var data = mProgressPayload[:data];
+                // This is the error information for the code
+                var errorInfo as Numbers = QRCodeTables.eccwbi[mVersion][QRCodeTables.error[mError]];
+                // This will hold our data blocks
+                var dataBlocks as Array<NumbersOrNulls> = [];
+                // This will hold our error blocks
+                var errorBlocks as Array<Numbers> = [];
+                // Some codes have the data sliced into two different sized blocks
+                // for example, first two 14 word sized blocks, then four 15 word sized blocks.
+                // This means that slicing size can change over time.
+                var dataBlockSizes as Numbers = [];
+                for (var i = 0; i < errorInfo[1]; i += 1) {
+                    dataBlockSizes.add(errorInfo[2]);
+                }
+                if (errorInfo[3] != 0) {
+                    for (var i = 0; i < errorInfo[3]; i += 1) {
+                        dataBlockSizes.add(errorInfo[4]);
                     }
                 }
+                // For every block of data, slice the data into the appropriate sized block
+                var currentByte = 0;
+                for (var i = 0; i < dataBlockSizes.size(); i += 1) {
+                    var nDataBlocks = dataBlockSizes[i];
+                    dataBlocks.add(data.slice(currentByte, currentByte + nDataBlocks));
+                    currentByte += nDataBlocks;
+                }
+                if (currentByte < data.size()) {
+                    throw new Lang.SerializationException("Too much data for this code version.");
+                }
+                // Calculate the error blocks
+                for (var i = 0; i < dataBlocks.size(); i += 1) {
+                    var block = dataBlocks[i];
+                    errorBlocks.add(_makeErrorBlock(block, i));
+                }
+                mProgressPayload = { :errorInfo => errorInfo, :dataBlocks => dataBlocks, :errorBlocks => errorBlocks };
+                break;
+            }
+
+            case ADD_DATA_DATA_BLOCKS_INTO_BUFFER: {
+                System.println("ADD_DATA_DATA_BLOCKS_INTO_BUFFER");
+                var errorInfo = mProgressPayload[:errorInfo];
+                var dataBlocks = mProgressPayload[:dataBlocks];
+                var errorBlocks = mProgressPayload[:errorBlocks];
+                // Buffer we will write our data blocks into
+                var result = "";
+                // Add the data blocks
+                // Write the buffer such that: block 1 byte 1, block 2 byte 1, etc.
+                var largestBlock = (errorInfo[2] < errorInfo[4] ? errorInfo[4] : errorInfo[2]) + errorInfo[0];
+                for (var i = 0; i < largestBlock; i += 1) {
+                    for (var b = 0; b < dataBlocks.size(); b += 1) {
+                        var block = dataBlocks[b];
+                        if (i < block.size()) {
+                            var blockItem = block[i];
+                            if (blockItem != null) {
+                                result += _binaryString(blockItem, 8);
+                            }
+                        }
+                    }
+                }
+                // Add the error code blocks.
+                // Write the buffer such that: block 1 byte 1, block 2 byte 2, etc.
+                for (var i = 0; i < errorInfo[0]; i += 1) {
+                    for (var b = 0; b < errorBlocks.size(); b += 1) {
+                        var block = errorBlocks[b];
+                        result += _binaryString(block[i], 8);
+                    }
+                }
+                mData = result;
+                mProgressPayload = {};
+                break;
             }
         }
-        // Add the error code blocks.
-        // Write the buffer such that: block 1 byte 1, block 2 byte 2, etc.
-        for (var i = 0; i < errorInfo[0]; i += 1) {
-            for (var b = 0; b < errorBlocks.size(); b += 1) {
-                var block = errorBlocks[b];
-                result += _binaryString(block[i], 8);
-            }
-        }
-        mData = result;
     }
 
     //! QR codes contain a "data length" field. This method creates this field.
@@ -421,27 +518,44 @@ class QRCodeBuilder {
     // ***************************************************************
 
     //! This method returns the best possible QR code.
-    private function _makeCode() as Array<Array> {
-        // Get the size of the underlying matrix
-        var matrixSize = QRCodeTables.versionSize[mVersion];
-        // Create a template matrix we will build the codes with
-        var template as CodeData = [];
-        for (var i = 0; i < matrixSize; i += 1) {
-            var row as CodeBlock = [];
-            for (var j = 0; j < matrixSize; j += 1) {
-                row.add(' ');
+    private function _iterateMakeCode() as Void {
+        switch (mProgress) {
+            case MAKE_CODE_ADD_PATTERNS: {
+                System.println("MAKE_CODE_ADD_PATTERNS");
+                // Get the size of the underlying matrix
+                var matrixSize = QRCodeTables.versionSize[mVersion];
+                // Create a template matrix we will build the codes with
+                var template as CodeData = [];
+                for (var i = 0; i < matrixSize; i += 1) {
+                    var row as CodeBlock = [];
+                    for (var j = 0; j < matrixSize; j += 1) {
+                        row.add(' ');
+                    }
+                    template.add(row);
+                }
+                // Add mandatory information to the template
+                _addDetectionPattern(template);
+                _addPositionPattern(template);
+                _addVersionPattern(template);
+                mProgressPayload = { :template => template };
+                break;
             }
-            template.add(row);
-        }
-        // Add mandatory information to the template
-        _addDetectionPattern(template);
-        _addPositionPattern(template);
-        _addVersionPattern(template);
 
-        // Create the various types of masks of the template
-        mMasks = _makeMasks(template);
-        mMaskIdx = _chooseBestMask();
-        return mMasks[mMaskIdx];
+            case MAKE_CODE_MAKE_MASKS: {
+                System.println("MAKE_CODE_MAKE_MASKS");
+                // Create the various types of masks of the template
+                mMasks = _makeMasks(mProgressPayload[:template]);
+                mProgressPayload = {};
+                break;
+            }
+
+            case MAKE_CODE_CHOOSE_BEST_MASK: {
+                System.println("MAKE_CODE_CHOOSE_BEST_MASK");
+                mMaskIdx = _chooseBestMask();
+                mProgressPayload = {};
+                break;
+            }
+        }
     }
 
     //! This method add the detection patterns to the QR code. This lets the scanner orient the pattern.
