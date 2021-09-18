@@ -9,9 +9,11 @@ class QRCodeMenuDelegate extends WatchUi.MenuInputDelegate {
 
     function onMenuItem(item as Symbol) as Void {
         if (item == :itemClearCache) {
-            if (Application has :Storage) {
-                Application.Storage.clearValues();
-            }
+            QRCodeSettings.clearCache();
+        } else if (item == :itemTryLargerFont) {
+            QRCodeSettings.setIsUsingLargerFont(true);
+        } else if (item == :itemTrySmallerFont) {
+            QRCodeSettings.setIsUsingLargerFont(false);
         }
     }
 }

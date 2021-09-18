@@ -70,7 +70,7 @@ class QRCodeOptimizer {
         mCallback = callback;
         mIteration = 0;
         mTimer = new Timer.Timer();
-        mTimer.start(method(:_iterate), 500, true);
+        mTimer.start(method(:_iterate), QRCodeSettings.getProcessingTimeInterval(), true);
 
         return null;
     }

@@ -1,3 +1,10 @@
-<menu id="MainMenu">
-    <menu-item id="itemClearCache" label="@Strings.MenuClearCache" />
-</menu>
+<menus>
+    <menu id="MainMenuL">
+        <menu-item id="itemTryLargerFont" label="@Strings.MenuTryLargerFont" />
+        <menu-item id="itemClearCache" label="@Strings.MenuClearCache" />
+    </menu>
+    <menu id="MainMenuS">
+        <menu-item id="itemTrySmallerFont" label="@Strings.MenuTrySmallerFont" />
+        <menu-item id="itemClearCache" label="@Strings.MenuClearCache" />
+    </menu>
+</menus>

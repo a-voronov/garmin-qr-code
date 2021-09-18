@@ -7,7 +7,10 @@ class QRCodeDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onMenu() as Boolean {
-        WatchUi.pushView(new Rez.Menus.MainMenu(), new QRCodeMenuDelegate(), WatchUi.SLIDE_UP);
+        var menu = QRCodeSettings.getIsUsingLargerFont()
+            ? new Rez.Menus.MainMenuS()
+            : new Rez.Menus.MainMenuL();
+        WatchUi.pushView(menu, new QRCodeMenuDelegate(), WatchUi.SLIDE_UP);
         return true;
     }
 }

@@ -1,5 +1,4 @@
 import Toybox.Lang;
-import Toybox.StringUtil;
 import Toybox.Timer;
 
 class QRCodeBuilder {

@@ -6,6 +6,8 @@
     <string id="ProcessingPrompt">Processing...</string>
 
     <string id="MenuClearCache">Clear Cache</string>
+    <string id="MenuTryLargerFont">Try Larger Font</string>
+    <string id="MenuTrySmallerFont">Try Smaller Font</string>
 
     <string id="SettingsCode">Code</string>
     <string id="SettingsCodeDescription">Code Description</string>

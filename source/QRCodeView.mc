@@ -3,7 +3,6 @@ import Toybox.WatchUi;
 import Toybox.Math;
 
 class QRCodeView extends WatchUi.View {
-    private const mCacheKey = "CachedCode";
     private var mErrorMsg as String;
     private var mErrorImg as BitmapResource;
     private var mProcessingMsg as String;
@@ -61,11 +60,9 @@ class QRCodeView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_WHITE);
         dc.clear();
 
-        if (Application has :Storage) {
-            var cachedCode = Application.Storage.getValue(mCacheKey);
-            if (cachedCode != null) {
-                return _drawQRText(cachedCode, dc);
-            }
+        var cachedCode = QRCodeSettings.getCachedCode();
+        if (cachedCode != null) {
+            return _drawQRText(cachedCode, dc);
         }
 
         if (mOptimizer.getStatus() == QRCodeOptimizer.IDLE and mOptimizer.start(method(:_handleStatus)) == null) {
@@ -112,10 +109,7 @@ class QRCodeView extends WatchUi.View {
             mProgressBar.setProgress(payload);
         } else if (status == QRCodeOptimizer.FINISHED) {
             WatchUi.popView(WatchUi.SLIDE_BLINK);
-
-            if ((Application has :Storage) and (payload instanceof Array)) {
-                Application.Storage.setValue(mCacheKey, payload);
-            }
+            QRCodeSettings.setCachedCode(payload);
         } else if (status == QRCodeOptimizer.STOPPED) {
             WatchUi.popView(WatchUi.SLIDE_BLINK);
         }
@@ -134,7 +128,9 @@ class QRCodeView extends WatchUi.View {
         var centerX = screenWidth / 2;
         var centerY = screenHeight / 2;
         var areaSize = screenWidth < screenHeight ? screenWidth : screenHeight;
-        var charSize = Math.floor(areaSize / codeSize);
+        var charSize = QRCodeSettings.getIsUsingLargerFont()
+            ? Math.ceil(areaSize / codeSize)
+            : Math.floor(areaSize / codeSize);
         charSize = charSize < 1 ? 1 : charSize;
         charSize = charSize > 16 ? 16 : charSize;
         areaSize = charSize * codeSize;
@@ -154,7 +150,9 @@ class QRCodeView extends WatchUi.View {
         var screenSize = screenWidth < screenHeight ? screenWidth : screenHeight;
         var screenRadius = screenSize / 2;
         var areaSize = screenRadius * Math.sqrt(2);
-        var charSize = Math.floor(areaSize / codeSize);
+        var charSize = QRCodeSettings.getIsUsingLargerFont()
+            ? Math.ceil(areaSize / codeSize)
+            : Math.floor(areaSize / codeSize);
         charSize = charSize < 1 ? 1 : charSize;
         charSize = charSize > 16 ? 16 : charSize;
         areaSize = charSize * codeSize;
