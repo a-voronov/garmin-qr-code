@@ -33,12 +33,10 @@ class QRCodeBuilder {
         H = 30
     }
 
-    typedef Callback as Method(status as Status, payload as Float or Result) as Void;
-
-    typedef CodeBlock as Array<Char>;
     typedef Numbers as Array<Number>;
     typedef NumbersOrNulls as Array<Number?>;
 
+    typedef CodeBlock as Array<Char>;
     typedef CodeData as Array<CodeBlock>;
     typedef CodeMasks as Array<CodeData>;
     typedef Result as CodeData or Error;
@@ -55,7 +53,6 @@ class QRCodeBuilder {
 
     private var mStatus as Status;
     private var mData as String?;
-    private var mCode as CodeData?;
     private var mMasks as CodeMasks?;
     private var mMaskIdx as Number?;
     private var mStatusError as Error?;
@@ -84,7 +81,10 @@ class QRCodeBuilder {
                 if (mStatusError != null) {
                     return mStatusError;
                 }
-                return mCode;
+                if (mMasks == null or mMaskIdx == null) {
+                    return UNKNOWN;
+                }
+                return mMasks[mMaskIdx];
             case STOPPED:
                 return null;
         }
@@ -115,7 +115,7 @@ class QRCodeBuilder {
             _finish(UNKNOWN);
             return null; // ???
         }
-        mCode = _buildQRCode();
+        _makeCode();
         return null;
     }
 
@@ -130,7 +130,6 @@ class QRCodeBuilder {
         mIteration = 0;
 
         mData = null;
-        mCode = null;
         mMasks = null;
         mMaskIdx = null;
         mStatusError = null;
@@ -155,7 +154,7 @@ class QRCodeBuilder {
     }
 
     // ***************************************************************
-    // *                         BUILD DATA                          *
+    // *                          ADD DATA                           *
     // ***************************************************************
 
     //! This function properly constructs a QR code's data string.
@@ -418,17 +417,17 @@ class QRCodeBuilder {
     }
 
     // ***************************************************************
-    // *                        BUILD QR CODE                        *
+    // *                          MAKE CODE                          *
     // ***************************************************************
 
     //! This method returns the best possible QR code.
-    private function _buildQRCode() as Array<Array> {
+    private function _makeCode() as Array<Array> {
         // Get the size of the underlying matrix
         var matrixSize = QRCodeTables.versionSize[mVersion];
         // Create a template matrix we will build the codes with
-        var template = [];
+        var template as CodeData = [];
         for (var i = 0; i < matrixSize; i += 1) {
-            var row = [];
+            var row as CodeBlock = [];
             for (var j = 0; j < matrixSize; j += 1) {
                 row.add(' ');
             }
@@ -450,7 +449,7 @@ class QRCodeBuilder {
     //! The detection pattern consists of three boxes located at the upper left, upper right, and lower left corners of the matrix.
     //! Also, two special lines called the timing pattern is also necessary.
     //! Finally, a single black pixel is added just above the lower left black box.
-    private function _addDetectionPattern(m as Array<Array>) as Void {
+    private function _addDetectionPattern(m as CodeData) as Void {
         var mSize = m.size();
         // Draw outer black box
         for (var i = 0; i < 7; i += 1) {
@@ -525,7 +524,7 @@ class QRCodeBuilder {
 
     //! This method draws the position adjustment patterns onto the QR Code.
     //! All QR code versions larger than one require these special boxes called position adjustment patterns.
-    private function _addPositionPattern(m as Array<Array>) as Void {
+    private function _addPositionPattern(m as CodeData) as Void {
         // Version 1 does not have a position adjustment pattern
         if (mVersion == 1) {
             return;
@@ -580,7 +579,7 @@ class QRCodeBuilder {
     //! For QR codes with a version 7 or higher, a special pattern specifying the code's version is required.
     //! For further information see:
     //! http://www.thonky.com/qr-code-tutorial/format-version-information/#example-of-version-7-information-string
-    private function _addVersionPattern(m as Array<Array>) as Void {
+    private function _addVersionPattern(m as CodeData) as Void {
         if (mVersion < 7) {
             return;
         }
@@ -606,11 +605,14 @@ class QRCodeBuilder {
 
     //! This method generates all seven masks so that the best mask can be determined.
     //! The template parameter is a code matrix that will server as the base for all the generated masks.
-    private function _makeMasks(template as Array<Array>) as Array<Array> {
+    private function _makeMasks(template as CodeData) as Array<Array> {
         var nmasks = QRCodeTables.maskPatterns.size();
         var masks = new [nmasks];
         for (var n = 0; n < nmasks; n += 1) {
-            var curMask = template.slice(0, null);
+            var curMask as CodeData = [];
+            for (var r = 0; r < template.size(); r += 1) {
+                curMask.add(template[r].slice(0, null));
+            }
             masks[n] = curMask;
             // Add the type pattern bits to the code
             _addTypePattern(curMask, QRCodeTables.typeBits[QRCodeTables.error[mError]][n].toCharArray());
@@ -635,7 +637,6 @@ class QRCodeBuilder {
                 // This will let us fill in the pattern right-left, right-left, etc.
                 var columnPair = [column, column - 1];
                 var cp = 0;
-
                 // Go through each row in the pattern moving up, then down
                 if (mv >= direction.size()) {
                     mv = 0;
@@ -676,7 +677,7 @@ class QRCodeBuilder {
     }
 
     //! This will add the pattern to the QR code that represents the error level and the type of mask used to make the code.
-    private function _addTypePattern(m as Array<Array>, typeBits as Array<Char>) {
+    private function _addTypePattern(m as CodeData, typeBits as CodeBlock) {
         var mSize = m.size();
         var b = 0;
         for (var i = 0; i < 7; i += 1) {
@@ -692,7 +693,6 @@ class QRCodeBuilder {
                 m[_fix(-(i + 1), mSize)][8] = bit;
             }
         }
-
         for (var i = -8; i < 0; i += 1) {
             var bit = typeBits[b];
             b += 1;
