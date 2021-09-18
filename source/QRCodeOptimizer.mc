@@ -33,7 +33,14 @@ class QRCodeOptimizer {
     private var mTimer as Timer?;
     private var mInput as Array?;
     private var mResult as Result?;
-    private var mCallback as Callback?;
+    private var mObservable as Observable;
+
+    public function initialize(input as Array) {
+        mStatus = IDLE;
+        mIteration = 0;
+        mInput = input;
+        mObservable = new Observable();
+    }
 
     public function getStatus() as Status {
         return mStatus;
@@ -52,13 +59,16 @@ class QRCodeOptimizer {
         }
     }
 
-    public function initialize(input as Array) {
-        mStatus = IDLE;
-        mIteration = 0;
-        mInput = input;
+    //! Subscribe with a symbol pointing to Method({ :status as Status, :payload as Float or Result }) as Void;
+    public function subscribe(observer as WeakReference, symbol as Symbol) as Boolean {
+        return mObservable.addObserver(observer, symbol) == null;
     }
 
-    public function start(callback as Callback) as Error? {
+    public function unsubscribe(observer as WeakReference) as Boolean {
+        return mObservable.removeObserver(observer) == null;
+    }
+
+    public function start() as Error? {
         if (mTimer != null or (mStatus != IDLE and mStatus != STOPPED)) {
             return ALREADY_STARTED;
         }
@@ -67,12 +77,24 @@ class QRCodeOptimizer {
         }
         mStatus = STARTED;
         mResult = [];
-        mCallback = callback;
         mIteration = 0;
         mTimer = new Timer.Timer();
         mTimer.start(method(:_iterate), QRCodeSettings.getProcessingTimeInterval(), true);
 
         return null;
+    }
+
+    public function stop() as Void {
+        if (mTimer == null) {
+            return;
+        }
+        System.println("optimizer stopped");
+        mTimer.stop();
+        mTimer = null;
+        mStatus = STOPPED;
+        mIteration = 0;
+        mResult = null;
+        mObservable.notify({ :status => mStatus, :payload => mResult });
     }
 
     function _iterate() as Void {
@@ -109,7 +131,7 @@ class QRCodeOptimizer {
             }
         }
         mResult.add(string);
-        mCallback.invoke(mStatus, _progress());
+        mObservable.notify({ :status => mStatus, :payload => _progress() });
         mIteration += 1;
         _finishIfNeeded();
     }
@@ -121,11 +143,11 @@ class QRCodeOptimizer {
     }
 
     private function _finish(result as Result) as Void {
-        System.println("stop");
+        System.println("optimizer finished");
         mTimer.stop();
         mStatus = FINISHED;
         mResult = result;
-        mCallback.invoke(mStatus, result);
+        mObservable.notify({ :status => mStatus, :payload => result });
     }
 
     private function _progress() as Float {
@@ -149,17 +171,5 @@ class QRCodeOptimizer {
             }
         }
         return true;
-    }
-
-    public function stop() as Void {
-        if (mTimer == null) {
-            return;
-        }
-        mTimer.stop();
-        mTimer = null;
-        mStatus = STOPPED;
-        mIteration = 0;
-        mResult = null;
-        mCallback.invoke(mStatus, mResult);
     }
 }

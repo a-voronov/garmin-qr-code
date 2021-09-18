@@ -62,10 +62,12 @@ class QRCodeView extends WatchUi.View {
 
         var cachedCode = QRCodeSettings.getCachedCode();
         if (cachedCode != null) {
-            return _drawQRText(cachedCode, dc);
+            _drawQRText(cachedCode, dc);
+            return;
         }
 
-        if (mOptimizer.getStatus() == QRCodeOptimizer.IDLE and mOptimizer.start(method(:_handleStatus)) == null) {
+        if (mOptimizer.getStatus() == QRCodeOptimizer.IDLE and mOptimizer.start() == null) {
+            mOptimizer.subscribe(weak(), :_handleStatus);
             mProgressBar = new WatchUi.ProgressBar(mProcessingMsg, 0);
             // TODO: handle back button in delegate
             WatchUi.pushView(mProgressBar, new $.ProgressDelegate(method(:_stopOptimizer)), WatchUi.SLIDE_BLINK);
@@ -104,7 +106,9 @@ class QRCodeView extends WatchUi.View {
         dc.drawBitmap(centerX - image.getWidth() / 2, centerY + 5, image);
     }
 
-    function _handleStatus(status as QRCodeOptimizer.Status, payload as Float or QRCodeOptimizer.Result) as Void {
+    function _handleStatus(args as { :status as QRCodeOptimizer.Status, :payload as Float or QRCodeOptimizer.Result}) as Void {
+        var status = args[:status];
+        var payload = args[:payload];
         if (status == QRCodeOptimizer.STARTED and payload instanceof Float) {
             mProgressBar.setProgress(payload);
         } else if (status == QRCodeOptimizer.FINISHED) {
