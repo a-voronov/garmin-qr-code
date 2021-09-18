@@ -50,6 +50,7 @@ class QRCodeBuilder {
     private var mIteration as Numer;
 
     private var mStatus as Status;
+    private var mData as String?;
     private var mCode as CodeData?;
     private var mMasks as CodeMasks?;
     private var mMaskIdx as Number?;
@@ -94,13 +95,24 @@ class QRCodeBuilder {
         return mObservable.removeObserver(observer) == null;
     }
 
-    public function build() as Array<Array> {
+    public function start() as Error? {
         if (mTimer != null) {
-            return [];
+            return ALREADY_STARTED;
         }
         // Create the binary data block.
         // And with this, create the actual QR code.
-        return _buildQRCode(_buildData());
+        mData = "";
+        try {
+            _addData();
+        } catch (e instanceof Lang.SerializationException) {
+            _finish(INVALID_INPUT);
+            return null; // ???
+        } catch (e) {
+            _finish(UNKNOWN);
+            return null; // ???
+        }
+        mCode = _buildQRCode();
+        return null;
     }
 
     public function stop() as Void {
@@ -113,6 +125,7 @@ class QRCodeBuilder {
         mStatus = STOPPED;
         mIteration = 0;
 
+        mData = null;
         mCode = null;
         mMasks = null;
         mMaskIdx = null;
@@ -122,6 +135,9 @@ class QRCodeBuilder {
     }
 
     private function _finish(error as Error?) as Void {
+        if (mTimer == null) {
+            return;
+        }
         System.println("builder finished");
         mTimer.stop();
         mStatus = FINISHED;
@@ -140,29 +156,28 @@ class QRCodeBuilder {
 
     //! This function properly constructs a QR code's data string.
     //! It takes into account the interleaving pattern required by the standard.
-    private function _buildData() as String {
+    private function _addData() as Void {
         // Encode the data into a QR code
-        var result = "";
-        result += _binaryString(mMode, 4);
-        result += _dataLength();
-        result += _encodeAlphaNumeric();
+        mData += _binaryString(mMode, 4);
+        mData += _dataLength();
+        mData += _encodeAlphaNumeric();
         // As per the standard, terminating bits are only supposed to be added after the bit stream is complete
-        var bits = _terminateBits(result);
+        var bits = _terminateBits(mData);
         if (bits != null) {
-            result += bits;
+            mData += bits;
         }
         // _delimitWords and _addWords can return Null
-        var addBits = _delimitWords(result);
+        var addBits = _delimitWords();
         if (addBits != null) {
-            result += addBits;
+            mData += addBits;
         }
-        var fillBytes = _addWords(result);
+        var fillBytes = _addWords();
         if (fillBytes != null) {
-            result += fillBytes;
+            mData += fillBytes;
         }
         // Get a numeric representation of the data
         var data = [];
-        var chunks = _grouped(8, result.toCharArray(), null);
+        var chunks = _grouped(8, mData.toCharArray(), null);
         for (var i = 0; i < chunks.size(); i += 1) {
             var chunk = chunks[i];
             var string = "";
@@ -205,7 +220,7 @@ class QRCodeBuilder {
             errorBlocks.add(_makeErrorBlock(block, i));
         }
         // Buffer we will write our data blocks into
-        result = "";
+        var result = "";
         // Add the data blocks
         // Write the buffer such that: block 1 byte 1, block 2 byte 1, etc.
         var largestBlock = (errorInfo[2] < errorInfo[4] ? errorInfo[4] : errorInfo[2]) + errorInfo[0];
@@ -228,7 +243,7 @@ class QRCodeBuilder {
                 result += _binaryString(block[i], 8);
             }
         }
-        return result;
+        mData = result;
     }
 
     //! QR codes contain a "data length" field. This method creates this field.
@@ -302,8 +317,8 @@ class QRCodeBuilder {
 
     //! This method takes the existing encoded binary string
     //! and returns a binary string that will pad it such that the encoded string contains only full bytes.
-    private function _delimitWords(payload as String) as String? {
-        var bitsShort = 8 - (payload.length() % 8).toNumber();
+    private function _delimitWords() as String? {
+        var bitsShort = 8 - (mData.length() % 8).toNumber();
         // The string already falls on an byte boundary do nothing
         if (bitsShort == 0 or bitsShort == 8) {
             return null;
@@ -314,8 +329,8 @@ class QRCodeBuilder {
     //! The data block must fill the entire data capacity of the QR code.
     //! If we fall short, then we must add bytes to the end of the encoded data field.
     //! The value of these bytes are specified in the standard.
-    private function _addWords(payload as String) as String? {
-        var dataBlocks = Math.floor(payload.length() / 8).toNumber();
+    private function _addWords() as String? {
+        var dataBlocks = Math.floor(mData.length() / 8).toNumber();
         var totalBlocks = Math.floor(QRCodeTables.dataCapacity[mVersion][QRCodeTables.error[mError]][0] / 8).toNumber();
         var neededBlocks = totalBlocks - dataBlocks;
 
@@ -403,7 +418,7 @@ class QRCodeBuilder {
     // ***************************************************************
 
     //! This method returns the best possible QR code.
-    private function _buildQRCode(buffer as String) as Array<Array> {
+    private function _buildQRCode() as Array<Array> {
         // Get the size of the underlying matrix
         var matrixSize = QRCodeTables.versionSize[mVersion];
         // Create a template matrix we will build the codes with
@@ -421,9 +436,9 @@ class QRCodeBuilder {
         _addVersionPattern(template);
 
         // Create the various types of masks of the template
-        var masks = _makeMasks(template, buffer);
-        var bestMask = _chooseBestMask(masks);
-        return masks[bestMask];
+        mMasks = _makeMasks(template);
+        mMaskIdx = _chooseBestMask();
+        return mMasks[mMaskIdx];
     }
 
     //! This method add the detection patterns to the QR code. This lets the scanner orient the pattern.
@@ -587,7 +602,7 @@ class QRCodeBuilder {
 
     //! This method generates all seven masks so that the best mask can be determined.
     //! The template parameter is a code matrix that will server as the base for all the generated masks.
-    private function _makeMasks(template as Array<Array>, buffer as String) as Array<Array> {
+    private function _makeMasks(template as Array<Array>) as Array<Array> {
         var nmasks = QRCodeTables.maskPatterns.size();
         var masks = new [nmasks];
         for (var n = 0; n < nmasks; n += 1) {
@@ -598,7 +613,7 @@ class QRCodeBuilder {
             // Get the mask pattern
             var pattern = QRCodeTables.maskPatterns[n];
             // This will read the 1's and 0's one at a time
-            var bits = buffer.toCharArray();
+            var bits = mData.toCharArray();
             var b = 0;
 
             // These will help us do the up, down, up, down pattern
@@ -693,25 +708,25 @@ class QRCodeBuilder {
     //! This method returns the index of the "best" mask as defined by having the lowest total penalty score.
     //! The penalty rules are defined by the standard.
     //! The mask with the lowest total score should be the easiest to read by optical scanners.
-    private function _chooseBestMask(masks as Array<Array>) as Number {
+    private function _chooseBestMask() as Number {
         var scores = [];
-        for (var i = 0; i < masks.size(); i += 1) {
+        for (var i = 0; i < mMasks.size(); i += 1) {
             scores.add([0, 0, 0, 0]);
         }
         // Score penalty rule number 1
         // Look for five consecutive squares with the same color.
         // Each one found gets a penalty of 3 + 1 for every
         // same color square after the first five in the row.
-        for (var n = 0; n < masks.size(); n += 1) {
-            var mask = masks[n];
+        for (var n = 0; n < mMasks.size(); n += 1) {
+            var mask = mMasks[n];
             var current = mask[0][0];
             var counter = 0;
             var total = 0;
 
             // Examine the mask row wise
-            for (var row = 0; row < masks.size(); row += 1) {
+            for (var row = 0; row < mMasks.size(); row += 1) {
                 counter = 0;
-                for (var col = 0; col < masks.size(); col += 1) {
+                for (var col = 0; col < mMasks.size(); col += 1) {
                     var bit = mask[row][col];
                     if (bit == current) {
                         counter += 1;
@@ -728,9 +743,9 @@ class QRCodeBuilder {
                 }
             }
             // Examine the mask column wise
-            for (var col = 0; col < masks.size(); col += 1) {
+            for (var col = 0; col < mMasks.size(); col += 1) {
                 counter = 0;
-                for (var row = 0; row < masks.size(); row += 1) {
+                for (var row = 0; row < mMasks.size(); row += 1) {
                     var bit = mask[row][col];
 
                     if (bit == current) {
@@ -751,12 +766,12 @@ class QRCodeBuilder {
         }
         // Score penalty rule 2
         // This rule will add 3 to the score for each 2x2 block of the same colored pixels there are.
-        for (var n = 0; n < masks.size(); n += 1) {
-            var mask = masks[n];
+        for (var n = 0; n < mMasks.size(); n += 1) {
+            var mask = mMasks[n];
             count = 0;
             // Don't examine the 0th and Nth row/column
-            for (var i = 0; i < masks.size()-1; i += 1) {
-                for (var j = 0; j < masks.size()-1; j += 1) {
+            for (var i = 0; i < mMasks.size()-1; i += 1) {
+                for (var j = 0; j < mMasks.size()-1; j += 1) {
                     if (mask[i][j] == mask[i+1][j] and mask[i][j] == mask[i][j+1] and mask[i][j] == mask[i+1][j+1]) {
                         count += 1;
                     }
@@ -770,12 +785,12 @@ class QRCodeBuilder {
                     ['1','0','1','1','1','0','1','0','0','0','0']];
                     //[0,0,0,0,1,0,1,1,1,0,1,0,0,0,0]];
 
-        for (var n = 0; n < masks.size(); n += 1) {
-            var mask = masks[n];
+        for (var n = 0; n < mMasks.size(); n += 1) {
+            var mask = mMasks[n];
             var nmatches = 0;
 
-            for (var i = 0; i < masks.size(); i += 1) {
-                for (var j = 0; j < masks.size(); j += 1) {
+            for (var i = 0; i < mMasks.size(); i += 1) {
+                for (var j = 0; j < mMasks.size(); j += 1) {
                     for (var pi = 0; pi < patterns.size(); pi += 1) {
                         var pattern = patterns[pi];
                         var match = true;
@@ -815,8 +830,8 @@ class QRCodeBuilder {
 
         // Score the last rule, penalty rule 4. This rule measures how close the pattern is to being 50% black.
         // The further it deviates from this this ideal the higher the penalty.
-        for (var n = 0; n < masks.size(); n += 1) {
-            var mask = masks[n];
+        for (var n = 0; n < mMasks.size(); n += 1) {
+            var mask = mMasks[n];
             var nblack = 0;
 
             for (var i = 0; i < mask.size(); i += 1) {

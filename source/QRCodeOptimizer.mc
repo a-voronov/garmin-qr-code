@@ -143,6 +143,9 @@ class QRCodeOptimizer {
     }
 
     private function _finish(result as Result) as Void {
+        if (mTimer == null) {
+            return;
+        }
         System.println("optimizer finished");
         mTimer.stop();
         mStatus = FINISHED;
