@@ -2,6 +2,23 @@ import Toybox.Lang;
 import Toybox.Timer;
 
 class QRCodeBuilder {
+    enum Status {
+        // Associates with null payload
+        IDLE, STOPPED,
+        // Associates with Float (0-100) payload
+        STARTED_BUILDING_DATA,
+        STARTED_BUILDING_CODE,
+        STARTED_PICKING_MASK,
+        // Associates with Result payload
+        FINISHED
+    }
+
+    enum Error {
+        INVALID_INPUT,
+        ALREADY_STARTED,
+        UNKNOWN
+    }
+
     enum Mode {
         NUMERIC = 1,
         ALPHANUMERIC = 2,
@@ -16,22 +33,105 @@ class QRCodeBuilder {
         H = 30
     }
 
+    typedef Callback as Method(status as Status, payload as Float or Result) as Void;
+    typedef CodeBlock as Array<Char>;
+    typedef CodeData as Array<CodeBlock>;
+    typedef CodeMasks as Array<CodeData>;
+    typedef Result as CodeData or Error;
+
     private const mMode as Mode = ALPHANUMERIC;
-    private var mCode as String;
+
+    private var mInput as String;
     private var mError as QRError;
     private var mVersion as Number;
+
+    private var mObservable as Observable;
     private var mTimer as Timer?;
+    private var mIteration as Numer;
+
+    private var mStatus as Status;
+    private var mCode as CodeData?;
+    private var mMasks as CodeMasks?;
+    private var mMaskIdx as Number?;
+    private var mStatusError as Error?;
 
     function initialize(code as String, error as QRError) {
-        mCode = code.toUpper();
+        mInput = code.toUpper();
         mError = error;
         mVersion = _bestVersion();
+        mObservable = new Observable();
+        mStatus = IDLE;
+    }
+
+    public function getStatus() as Status {
+        return mStatus;
+    }
+
+    public function getResult() as Float or Result or Null {
+        switch (mStatus) {
+            case IDLE:
+                return null;
+            case STARTED_BUILDING_DATA:
+            case STARTED_BUILDING_CODE:
+            case STARTED_PICKING_MASK:
+                return _progress();
+            case FINISHED:
+                if (mStatusError != null) {
+                    return mStatusError;
+                }
+                return mCode;
+            case STOPPED:
+                return null;
+        }
+    }
+
+    //! Subscribe with a symbol pointing to Method({ :status as Status, :payload as Float or Result }) as Void;
+    public function subscribe(observer as WeakReference, symbol as Symbol) as Boolean {
+        return mObservable.addObserver(observer, symbol) == null;
+    }
+
+    public function unsubscribe(observer as WeakReference) as Boolean {
+        return mObservable.removeObserver(observer) == null;
     }
 
     public function build() as Array<Array> {
+        if (mTimer != null) {
+            return [];
+        }
         // Create the binary data block.
         // And with this, create the actual QR code.
         return _buildQRCode(_buildData());
+    }
+
+    public function stop() as Void {
+        if (mTimer == null) {
+            return;
+        }
+        System.println("builder stopped");
+        mTimer.stop();
+        mTimer = null;
+        mStatus = STOPPED;
+        mIteration = 0;
+
+        mCode = null;
+        mMasks = null;
+        mMaskIdx = null;
+        mStatusError = null;
+
+        mObservable.notify({ :status => getStatus(), :payload => getResult() });
+    }
+
+    private function _finish(error as Error?) as Void {
+        System.println("builder finished");
+        mTimer.stop();
+        mStatus = FINISHED;
+        mStatusError = error;
+
+        mObservable.notify({ :status => getStatus(), :payload => getResult() });
+    }
+
+    private function _progress() as Float {
+        return 42;//(mIteration.toFloat() / Math.ceil(mInput.size() / 4)) * 100;
     }
 
     // ***************************************************************
@@ -145,7 +245,7 @@ class QRCodeBuilder {
             maxVersion = 40;
         }
         var dataLength = QRCodeTables.dataLengthField[maxVersion][mMode];
-        var lengthStr = _binaryString(mCode.length(), dataLength);
+        var lengthStr = _binaryString(mInput.length(), dataLength);
         if (lengthStr.length() > dataLength) {
             throw new Lang.SerializationException("The supplied data will not fit within this version of a QRCode.");
         }
@@ -157,7 +257,7 @@ class QRCodeBuilder {
     private function _encodeAlphaNumeric() as String {
         // Change the data such that it uses a QR code ascii table
         var ascii = [];
-        var chars = mCode.toCharArray();
+        var chars = mInput.toCharArray();
         for (var i = 0; i < chars.size(); i += 1) {
             ascii.add(QRCodeTables.asciiCodes[chars[i]]);
         }
@@ -791,7 +891,7 @@ class QRCodeBuilder {
         for (var version = 1; version < 41; version += 1) {
             // Get the maximum possible capacity
             var capacity = QRCodeTables.dataCapacity[version][QRCodeTables.error[mError]][mMode];
-            if (capacity >= mCode.length()) {
+            if (capacity >= mInput.length()) {
                 return version;
             }
         }
