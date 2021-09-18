@@ -40,14 +40,13 @@ class QRCodeApp extends Application.AppBase {
     function initialize() {
         AppBase.initialize();
 
-        mBuilder = new QRCodeBuilder("a+b+C+sdfSD++Sd+ASd+as", QRCodeBuilder.L);
-        mBuilder.start();
-        mBuilder.subscribe(weak(), :_handleStatus);
-
+        // mBuilder = new QRCodeBuilder("1/3*5$M%P-F+W.C:W E", QRCodeBuilder.L);
+        mBuilder = new QRCodeBuilder("a", QRCodeBuilder.L);
         mOptimizer = new QRCodeOptimizer(mCode);
     }
 
     function onStart(state as Dictionary?) as Void {
+
     }
 
     function onSettingsChanged() as Void {
@@ -61,19 +60,7 @@ class QRCodeApp extends Application.AppBase {
     }
 
     function getInitialView() as Array<Views or InputDelegates>? {
-        return [ new QRCodeView(mOptimizer), new QRCodeDelegate() ] as Array<Views or InputDelegates>;
-    }
-
-    function _handleStatus(args as { :status as QRCodeOptimizer.Status, :payload as Float or QRCodeOptimizer.Result}) as Void {
-        var status = args[:status];
-        var payload = args[:payload];
-        if (status == QRCodeOptimizer.STARTED and payload instanceof Float) {
-            System.println("app.builder started: " + payload);
-        } else if (status == QRCodeOptimizer.FINISHED) {
-            System.println("app.builder finished");
-        } else if (status == QRCodeOptimizer.STOPPED) {
-            System.println("app.builder stopped");
-        }
+        return [ new QRCodeView(mBuilder, mOptimizer), new QRCodeDelegate() ] as Array<Views or InputDelegates>;
     }
 }
 
