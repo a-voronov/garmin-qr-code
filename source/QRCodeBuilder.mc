@@ -34,7 +34,11 @@ class QRCodeBuilder {
     }
 
     typedef Callback as Method(status as Status, payload as Float or Result) as Void;
+
     typedef CodeBlock as Array<Char>;
+    typedef Numbers as Array<Number>;
+    typedef NumbersOrNulls as Array<Number?>;
+
     typedef CodeData as Array<CodeBlock>;
     typedef CodeMasks as Array<CodeData>;
     typedef Result as CodeData or Error;
@@ -176,8 +180,8 @@ class QRCodeBuilder {
             mData += fillBytes;
         }
         // Get a numeric representation of the data
-        var data = [];
-        var chunks = _grouped(8, mData.toCharArray(), null);
+        var data as Numbers = [];
+        var chunks as Array<CodeBlock> = _grouped(8, mData.toCharArray(), null);
         for (var i = 0; i < chunks.size(); i += 1) {
             var chunk = chunks[i];
             var string = "";
@@ -187,15 +191,15 @@ class QRCodeBuilder {
             data.add(string.toNumberWithBase(2));
         }
         // This is the error information for the code
-        var errorInfo = QRCodeTables.eccwbi[mVersion][QRCodeTables.error[mError]];
+        var errorInfo as Numbers = QRCodeTables.eccwbi[mVersion][QRCodeTables.error[mError]];
         // This will hold our data blocks
-        var dataBlocks = [];
+        var dataBlocks as Array<NumbersOrNulls> = [];
         // This will hold our error blocks
-        var errorBlocks = [];
+        var errorBlocks as Array<Numbers> = [];
         // Some codes have the data sliced into two different sized blocks
         // for example, first two 14 word sized blocks, then four 15 word sized blocks.
         // This means that slicing size can change over time.
-        var dataBlockSizes = [];
+        var dataBlockSizes as Numbers = [];
         for (var i = 0; i < errorInfo[1]; i += 1) {
             dataBlockSizes.add(errorInfo[2]);
         }
@@ -228,9 +232,9 @@ class QRCodeBuilder {
             for (var b = 0; b < dataBlocks.size(); b += 1) {
                 var block = dataBlocks[b];
                 if (i < block.size()) {
-                    var blockI = block[i];
-                    if (blockI != null) {
-                        result += _binaryString(blockI, 8);
+                    var blockItem = block[i];
+                    if (blockItem != null) {
+                        result += _binaryString(blockItem, 8);
                     }
                 }
             }
@@ -356,7 +360,7 @@ class QRCodeBuilder {
     //! This is *very complicated* process. To understand the code you need to read:
     //! * http://www.thonky.com/qr-code-tutorial/part-2-error-correction/
     //! * http://www.matchadesign.com/blog/qr-code-demystified-part-4/
-    private function _makeErrorBlock(block as Array, blockNumber as Number) as Array {
+    private function _makeErrorBlock(block as NumbersOrNulls, blockNumber as Number) as NumbersOrNulls {
         // Get the error information from the standards table
         var errorInfo = QRCodeTables.eccwbi[mVersion][QRCodeTables.error[mError]];
         // This is the number of 8-bit words per block
@@ -369,7 +373,7 @@ class QRCodeBuilder {
         // This is the size of the error block
         var errorBlockSize = errorInfo[0];
         // Copy the block as the message polynomial coefficients
-        var msgPolCoeff = block;
+        var msgPolCoeff = block.slice(0, null);
         // Add the error blocks to the message polynomial
         msgPolCoeff.addAll(_mult([0], errorBlockSize));
         // Get the generator polynomial
