@@ -37,7 +37,7 @@ class QRCodeBuilder {
     enum Progress {
         // Payload: {}
         ADD_DATA_PREPARE,
-        // Payload: {}
+        // Payload: Subroutine => { :current as Number, :total as Number, result as String, pairs as Array<Numbers> }
         ADD_DATA_ENCODE,
         // Payload: {}
         ADD_DATA_TERMINATE_BITS_AND_PROCESS_WORDS,
@@ -170,7 +170,14 @@ class QRCodeBuilder {
     }
 
     private function _progress() as Float {
-        return (mProgress.toFloat() / 9) * 100;
+        var subCurrent = mProgressPayload[:current];
+        var subTotal = mProgressPayload[:total];
+        var subProgress = 0;
+        var total = 9;
+        if (subTotal != null and subCurrent != null) {
+            subProgress = ((subCurrent.toFloat() / subTotal) * 100) / total;
+        }
+        return ((mProgress.toFloat() / total) * 100) + subProgress;
     }
 
     // ***************************************************************
@@ -203,6 +210,12 @@ class QRCodeBuilder {
                 break;
         }
         mObservable.notify({ :status => mStatus, :payload => _progress() });
+
+        var subCurrent = mProgressPayload[:current];
+        var subTotal = mProgressPayload[:total];
+        if ((subTotal != null and subCurrent != null) and subCurrent < subTotal) {
+            return;
+        }
         mProgress += 1;
         _finishIfNeeded();
     }
@@ -228,8 +241,7 @@ class QRCodeBuilder {
 
             case ADD_DATA_ENCODE: {
                 System.println("ADD_DATA_ENCODE");
-                mData += _encodeAlphaNumeric();
-                mProgressPayload = {};
+                _encodeAlphaNumeric();
                 break;
             }
 
@@ -369,17 +381,23 @@ class QRCodeBuilder {
 
     //! This method encodes the QR code's data if its mode is alphanumeric.
     //! It returns the data encoded as a binary string.
-    private function _encodeAlphaNumeric() as String {
-        // Change the data such that it uses a QR code ascii table
-        var ascii = [];
-        var chars = mInput.toCharArray();
-        for (var i = 0; i < chars.size(); i += 1) {
-            ascii.add(QRCodeTables.asciiCodes[chars[i]]);
-        }
-        // Now perform the algorithm that will make the ascii into bit fields
-        var pairs = _grouped(2, ascii, null);
-        var result = "";
-        for (var i = 0; i < pairs.size(); i += 1) {
+    private function _encodeAlphaNumeric() as Void {
+        if (mProgressPayload.isEmpty()) {
+            // Change the data such that it uses a QR code ascii table
+            var ascii = [];
+            var chars = mInput.toCharArray();
+            for (var i = 0; i < chars.size(); i += 1) {
+                ascii.add(QRCodeTables.asciiCodes[chars[i]]);
+            }
+            // Now perform the algorithm that will make the ascii into bit fields
+            var pairs = _grouped(2, ascii, null);
+
+            mProgressPayload = { :current => 0, :total => pairs.size(), :result => "", :pairs => pairs };
+        } else {
+            var result = mProgressPayload[:result];
+            var pairs = mProgressPayload[:pairs];
+            // for (var i = 0; i < pairs.size(); i += 1) {
+            var i = mProgressPayload[:current];
             var tuple = pairs[i];
             var a = tuple[0];
             var b = tuple[1];
@@ -391,9 +409,13 @@ class QRCodeBuilder {
                     result += _binaryString(a, 6);
                 }
             }
+            mProgressPayload[:result] = result;
+            mProgressPayload[:current] += 1;
+            if (mProgressPayload[:current] == mProgressPayload[:total]) {
+                // Return the binary string
+                mData += mProgressPayload[:result];
+            }
         }
-        // Return the binary string
-        return result;
     }
 
     //! This method adds zeros to the end of the encoded data so that the encoded data is of the correct length.

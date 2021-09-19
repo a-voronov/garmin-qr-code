@@ -38,6 +38,6 @@ module QRCodeSettings {
     }
 
     function getBuildingTimeInterval() as Number {
-        return 5000;
+        return 100;
     }
 }
