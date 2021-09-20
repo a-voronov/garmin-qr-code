@@ -15,9 +15,7 @@ class QRCodeBuilder {
     enum Error {
         INVALID_INPUT,
         ALREADY_STARTED,
-        UNKNOWN,
-
-        TEST = 42
+        UNKNOWN
     }
 
     enum Mode {
@@ -50,9 +48,9 @@ class QRCodeBuilder {
 
         // Payload: {}
         MAKE_CODE_ADD_PATTERNS,
-        // Payload: { :template as CodeData }
+        // Payload: { :template as CodeData } + Subroutine => { :current as Number, :total as Number, :masks as CodeMasks }
         MAKE_CODE_MAKE_MASKS,
-        // Payload: {}
+        // Payload: Subroutine => { :current as Number, :total as Number }
         MAKE_CODE_CHOOSE_BEST_MASK
     }
 
@@ -65,6 +63,7 @@ class QRCodeBuilder {
     typedef Result as CodeData or Error;
 
     private const mMode as Mode = ALPHANUMERIC;
+    private const mStepsToFinish = 9;
 
     private var mInput as String;
     private var mError as QRError;
@@ -87,6 +86,14 @@ class QRCodeBuilder {
         mVersion = _bestVersion();
         mObservable = new Observable();
         mStatus = IDLE;
+
+        System.println("mVersion: " + mVersion);
+
+        System.println("A: " + _binaryString('A'.toNumber(), 8));
+        System.println("+: " + _binaryString('+'.toNumber(), 8));
+        System.println("B: " + _binaryString('B'.toNumber(), 8));
+        System.println("2: " + _binaryString('2'.toNumber(), 8));
+
     }
 
     public function getStatus() as Status {
@@ -122,6 +129,8 @@ class QRCodeBuilder {
     }
 
     public function start() as Error? {
+        System.println("slice: " + [1,2,3,4,5,6,7].slice(0, null));
+
         if (mTimer != null) {
             return ALREADY_STARTED;
         }
@@ -173,11 +182,10 @@ class QRCodeBuilder {
         var subCurrent = mProgressPayload[:current];
         var subTotal = mProgressPayload[:total];
         var subProgress = 0;
-        var total = 9;
         if (subTotal != null and subCurrent != null) {
-            subProgress = ((subCurrent.toFloat() / subTotal) * 100) / total;
+            subProgress = ((subCurrent.toFloat() / subTotal) * 100) / mStepsToFinish;
         }
-        return ((mProgress.toFloat() / total) * 100) + subProgress;
+        return ((mProgress.toFloat() / mStepsToFinish) * 100) + subProgress;
     }
 
     // ***************************************************************
@@ -221,7 +229,7 @@ class QRCodeBuilder {
     }
 
     private function _finishIfNeeded() as Void {
-        if (mProgress >= 9) {
+        if (mProgress >= mStepsToFinish) {
             _finish(null);
         }
     }
@@ -235,6 +243,7 @@ class QRCodeBuilder {
                 // Encode the data into a QR code
                 mData += _binaryString(mMode, 4);
                 mData += _dataLength();
+                System.println("mData: " + mData);
                 mProgressPayload = {};
                 break;
             }
@@ -242,6 +251,9 @@ class QRCodeBuilder {
             case ADD_DATA_ENCODE: {
                 System.println("ADD_DATA_ENCODE");
                 _encodeAlphaNumeric();
+                System.println("mData: " + mData);
+                // _encodeBinary();
+                // mProgressPayload = {};
                 break;
             }
 
@@ -269,7 +281,9 @@ class QRCodeBuilder {
                 System.println("ADD_DATA_NUMERIC_REPRESENTATION");
                 // Get a numeric representation of the data
                 var data as Numbers = [];
+                System.println("mData: " + mData);
                 var chunks as Array<CodeBlock> = _grouped(8, mData.toCharArray(), null);
+                System.println("chunks: " + chunks);
                 for (var i = 0; i < chunks.size(); i += 1) {
                     var chunk = chunks[i];
                     var string = "";
@@ -294,15 +308,11 @@ class QRCodeBuilder {
                 // Some codes have the data sliced into two different sized blocks
                 // for example, first two 14 word sized blocks, then four 15 word sized blocks.
                 // This means that slicing size can change over time.
-                var dataBlockSizes as Numbers = [];
-                for (var i = 0; i < errorInfo[1]; i += 1) {
-                    dataBlockSizes.add(errorInfo[2]);
-                }
+                var dataBlockSizes = _mult([errorInfo[2]], errorInfo[1]);
                 if (errorInfo[3] != 0) {
-                    for (var i = 0; i < errorInfo[3]; i += 1) {
-                        dataBlockSizes.add(errorInfo[4]);
-                    }
+                    dataBlockSizes.addAll(_mult([errorInfo[4]], errorInfo[3]));
                 }
+                System.println("data: " + data);
                 // For every block of data, slice the data into the appropriate sized block
                 var currentByte = 0;
                 for (var i = 0; i < dataBlockSizes.size(); i += 1) {
@@ -316,6 +326,7 @@ class QRCodeBuilder {
                 // Calculate the error blocks
                 for (var i = 0; i < dataBlocks.size(); i += 1) {
                     var block = dataBlocks[i];
+                    System.println("block: " + block);
                     errorBlocks.add(_makeErrorBlock(block, i));
                 }
                 mProgressPayload = { :errorInfo => errorInfo, :dataBlocks => dataBlocks, :errorBlocks => errorBlocks };
@@ -352,6 +363,7 @@ class QRCodeBuilder {
                     }
                 }
                 mData = result;
+                System.println("mData: " + mData);
                 mProgressPayload = {};
                 break;
             }
@@ -383,12 +395,13 @@ class QRCodeBuilder {
     //! It returns the data encoded as a binary string.
     private function _encodeAlphaNumeric() as Void {
         if (mProgressPayload.isEmpty()) {
-            // Change the data such that it uses a QR code ascii table
+            // Change the data such that it uses a QR code ascii table;
             var ascii = [];
             var chars = mInput.toCharArray();
             for (var i = 0; i < chars.size(); i += 1) {
                 ascii.add(QRCodeTables.asciiCodes[chars[i]]);
             }
+            System.println("ascii(" + ascii.size() + "): " + ascii);
             // Now perform the algorithm that will make the ascii into bit fields
             var pairs = _grouped(2, ascii, null);
 
@@ -396,17 +409,20 @@ class QRCodeBuilder {
         } else {
             var result = mProgressPayload[:result];
             var pairs = mProgressPayload[:pairs];
-            // for (var i = 0; i < pairs.size(); i += 1) {
             var i = mProgressPayload[:current];
             var tuple = pairs[i];
             var a = tuple[0];
             var b = tuple[1];
             if (a != null) {
                 if (b != null) {
-                    result += _binaryString((45 * a) + b, 11);
+                    var ab = _binaryString((45 * a) + b, 11);
+                    System.println("ab (" + ((45 * a) + b) + "): " + ab);
+                    result += ab;
                 } else {
+                    var ares = _binaryString(a, 6);
+                    System.println("a (" + a + "): " + ares);
                     // This occurs when there is an odd number of characters in the data
-                    result += _binaryString(a, 6);
+                    result += ares;
                 }
             }
             mProgressPayload[:result] = result;
@@ -416,6 +432,18 @@ class QRCodeBuilder {
                 mData += mProgressPayload[:result];
             }
         }
+    }
+
+    //! This method encodes the QR code's data if its mode is 8 bit mode.
+    //! It returns the data encoded as a binary string.
+    private function _encodeBinary() as Void {
+        var chars = mInput.toCharArray();
+        var result = "";
+        for (var c = 0; c < chars.size(); c += 1) {
+            var char = chars[c];
+            result += _binaryString(char.toNumber(), 8);
+        }
+        mData += result;
     }
 
     //! This method adds zeros to the end of the encoded data so that the encoded data is of the correct length.
@@ -482,12 +510,7 @@ class QRCodeBuilder {
         // Get the error information from the standards table
         var errorInfo = QRCodeTables.eccwbi[mVersion][QRCodeTables.error[mError]];
         // This is the number of 8-bit words per block
-        var codeWordsPerBlock;
-        if (blockNumber < errorInfo[1]) {
-            codeWordsPerBlock = errorInfo[2];
-        } else {
-            codeWordsPerBlock = errorInfo[4];
-        }
+        var codeWordsPerBlock = blockNumber < errorInfo[1] ? errorInfo[2] : errorInfo[4];
         // This is the size of the error block
         var errorBlockSize = errorInfo[0];
         // Copy the block as the message polynomial coefficients
@@ -510,6 +533,7 @@ class QRCodeBuilder {
                 continue;
             } else {
                 // Turn the coefficient into an alpha exponent
+                System.println("coeff: " + coefficient + ", size: " + QRCodeTables.galoisAntilog.size());
                 alphaExp = QRCodeTables.galoisAntilog[coefficient];
             }
             // Add the alpha to the generator polynomial
@@ -532,6 +556,7 @@ class QRCodeBuilder {
         if (msgPolCoeff.size() < codeWordsPerBlock) {
             msgPolCoeff.addAll(_mult([0], (codeWordsPerBlock - msgPolCoeff.size())));
         }
+        System.println("msgPolCoeff: " + msgPolCoeff);
         return msgPolCoeff;
     }
 
@@ -559,6 +584,8 @@ class QRCodeBuilder {
                 _addDetectionPattern(template);
                 _addPositionPattern(template);
                 _addVersionPattern(template);
+
+                System.println("template: " + template);
                 mProgressPayload = { :template => template };
                 break;
             }
@@ -566,15 +593,16 @@ class QRCodeBuilder {
             case MAKE_CODE_MAKE_MASKS: {
                 System.println("MAKE_CODE_MAKE_MASKS");
                 // Create the various types of masks of the template
-                mMasks = _makeMasks(mProgressPayload[:template]);
-                mProgressPayload = {};
+                _makeMasks();
                 break;
             }
 
             case MAKE_CODE_CHOOSE_BEST_MASK: {
+                if (mProgressPayload.hasKey(:template)) {
+                    mProgressPayload = {};
+                }
                 System.println("MAKE_CODE_CHOOSE_BEST_MASK");
-                mMaskIdx = _chooseBestMask();
-                mProgressPayload = {};
+                _chooseBestMask();
                 break;
             }
         }
@@ -589,51 +617,51 @@ class QRCodeBuilder {
         var mSize = m.size();
         // Draw outer black box
         for (var i = 0; i < 7; i += 1) {
-            var inv = mSize - (i + 1);
-            var xs = [0, 6, mSize - 1, mSize - 7];
+            var inv = - (i + 1);
+            var xs = [0, 6, - 1, - 7];
 
             for (var x = 0; x < xs.size(); x += 1) {
                 var j = xs[x];
-                m[j][i] = '1';
-                m[i][j] = '1';
-                m[inv][j] = '1';
-                m[j][inv] = '1';
+                m[_fix(j, mSize)][_fix(i, mSize)] = '1';
+                m[_fix(i, mSize)][_fix(j, mSize)] = '1';
+                m[_fix(inv, mSize)][_fix(j, mSize)] = '1';
+                m[_fix(j, mSize)][_fix(inv, mSize)] = '1';
             }
         }
         // Draw inner white box
         for (var i = 1; i < 6; i += 1) {
-            var inv = mSize - (i + 1);
-            var xs = [1, 5, mSize -2, mSize -6];
+            var inv = - (i + 1);
+            var xs = [1, 5, -2, -6];
 
             for (var x = 0; x < xs.size(); x += 1) {
                 var j = xs[x];
-                m[j][i] = '0';
-                m[i][j] = '0';
-                m[inv][j] = '0';
-                m[j][inv] = '0';
+                m[_fix(j, mSize)][_fix(i, mSize)] = '0';
+                m[_fix(i, mSize)][_fix(j, mSize)] = '0';
+                m[_fix(inv, mSize)][_fix(j, mSize)] = '0';
+                m[_fix(j, mSize)][_fix(inv, mSize)] = '0';
             }
         }
         // Draw inner black box
         for (var i = 2; i < 5; i += 1) {
-            var inv = mSize - (i + 1);
+            var inv = - (i + 1);
 
             for (var j = 2; j < 5; j += 1) {
-                m[i][j] = '1';
-                m[inv][j] = '1';
-                m[j][inv] = '1';
+                m[_fix(i, mSize)][_fix(j, mSize)] = '1';
+                m[_fix(inv, mSize)][_fix(j, mSize)] = '1';
+                m[_fix(j, mSize)][_fix(inv, mSize)] = '1';
             }
         }
         // Draw white border
         for (var i = 0; i < 8; i += 1) {
-            var inv = mSize - (i + 1);
-            var xs = [7, mSize - 8];
+            var inv = - (i + 1);
+            var xs = [7, - 8];
 
             for (var x = 0; x < xs.size(); x += 1) {
                 var j = xs[x];
-                m[i][j] = '0';
-                m[j][i] = '0';
-                m[inv][j] = '0';
-                m[j][inv] = '0';
+                m[_fix(i, mSize)][_fix(j, mSize)] = '0';
+                m[_fix(j, mSize)][_fix(i, mSize)] = '0';
+                m[_fix(inv, mSize)][_fix(j, mSize)] = '0';
+                m[_fix(j, mSize)][_fix(inv, mSize)] = '0';
             }
         }
         // To keep the code short, it draws an extra box in the lower right corner, this removes it.
@@ -688,24 +716,24 @@ class QRCodeBuilder {
                 var wps = [-1, 1];
                 for (var wp = 0; wp < wps.size(); wp +=1) {
                     var x = wps[wp];
-                    m[_fix(i+x, mSize)][_fix(j+x, mSize)] = '0';
-                    m[_fix(i+x, mSize)][j] = '0';
+                    m[i+x][j+x] = '0';
+                    m[i+x][j] = '0';
                     m[i][j+x] = '0';
-                    m[_fix(i-x, mSize)][_fix(j+x, mSize)] = '0';
-                    m[_fix(i+x, mSize)][_fix(j-x, mSize)] = '0';
+                    m[i-x][j+x] = '0';
+                    m[i+x][j-x] = '0';
                 }
                 // Surround the white box with a black box
                 var xbps = [-2,2];
-                var ybps = [-2,2];
+                var ybps = [0,-1,1];
                 for (var xbp = 0; xbp < xbps.size(); xbp += 1) {
                     var x = xbps[xbp];
                     for (var ybp = 0; ybp < ybps.size(); ybp += 1) {
                         var y = ybps[ybp];
-                        m[_fix(i+x, mSize)][_fix(j+x, mSize)] = '1';
-                        m[_fix(i+x, mSize)][_fix(j+y, mSize)] = '1';
-                        m[_fix(i+y, mSize)][_fix(j+x, mSize)] = '1';
-                        m[_fix(i-x, mSize)][_fix(j+x, mSize)] = '1';
-                        m[_fix(i+x, mSize)][_fix(j-x, mSize)] = '1';
+                        m[i+x][j+x] = '1';
+                        m[i+x][j+y] = '1';
+                        m[i+y][j+x] = '1';
+                        m[i-x][j+x] = '1';
+                        m[i+x][j-x] = '1';
                     }
                 }
             }
@@ -741,21 +769,29 @@ class QRCodeBuilder {
 
     //! This method generates all seven masks so that the best mask can be determined.
     //! The template parameter is a code matrix that will server as the base for all the generated masks.
-    private function _makeMasks(template as CodeData) as Array<Array> {
-        var nmasks = QRCodeTables.maskPatterns.size();
-        var masks = new [nmasks];
-        for (var n = 0; n < nmasks; n += 1) {
+    private function _makeMasks() as Void {
+        if (!mProgressPayload.hasKey(:current)) {
+            var nmasks = QRCodeTables.maskPatterns.size();
+            var masks = new [nmasks];
+
+            mProgressPayload.put(:current, 0);
+            mProgressPayload.put(:total, masks.size());
+            mProgressPayload.put(:masks, masks);
+        } else {
+            var masks = mProgressPayload[:masks];
+            var template = mProgressPayload[:template];
+            var n = mProgressPayload[:current];
             var curMask as CodeData = [];
             for (var r = 0; r < template.size(); r += 1) {
                 curMask.add(template[r].slice(0, null));
             }
-            masks[n] = curMask;
             // Add the type pattern bits to the code
             _addTypePattern(curMask, QRCodeTables.typeBits[QRCodeTables.error[mError]][n].toCharArray());
             // Get the mask pattern
             var pattern = QRCodeTables.maskPatterns[n];
             // This will read the 1's and 0's one at a time
             var bits = mData.toCharArray();
+            System.println("bits: " + bits);
             var b = 0;
 
             // These will help us do the up, down, up, down pattern
@@ -772,7 +808,6 @@ class QRCodeBuilder {
                 }
                 // This will let us fill in the pattern right-left, right-left, etc.
                 var columnPair = [column, column - 1];
-                var cp = 0;
                 // Go through each row in the pattern moving up, then down
                 if (mv >= direction.size()) {
                     mv = 0;
@@ -784,32 +819,32 @@ class QRCodeBuilder {
 
                 for (var row = rStart; (dir > 0 ? row < rStop : row > rStop); row += dir) {
                     // Fill in the right then left column
-                    for (var i = 0; i < 2; i += 1) {
-                        if (cp >= columnPair.size()) {
-                            cp = 0;
-                        }
-                        var col = columnPair[cp];
-                        cp += 1;
+                    for (var i = 0; i < columnPair.size(); i += 1) {
+                        var col = columnPair[i];
                         // Go to the next column if we encounter a preexisting pattern (usually an alignment pattern)
                         if (curMask[row][col] != ' ') {
                             continue;
                         }
                         // Some versions don't have enough bits. You then fill in the rest of the pattern with 0's.
                         // These are called "remainder bits."
-                        var bit = b < bits.size() ? bits[b] : 0;
-                        b += 1;
-
-                        // If the pattern is True then flip the bit
-                        if (pattern.invoke(row, col)) {
-                            curMask[row][col] = (bit.toString().toNumber() ^ 1).toString().toCharArray()[0];
-                        } else {
-                            curMask[row][col] = bit;
+                        var bit = b < bits.size() ? bits[b] : '0';
+                        bit = bit.toString().toNumber();
+                        if (bit == null) {
+                            bit = 0;
                         }
+                        b += 1;
+                        // If the pattern is True then flip the bit
+                        curMask[row][col] = (pattern.invoke(row, col) ? (bit ^ 1) : bit).toString().toCharArray()[0];
                     }
                 }
             }
+            masks[n] = curMask;
+            mProgressPayload[:masks] = masks;
+            mProgressPayload[:current] += 1;
+            if (mProgressPayload[:current] == mProgressPayload[:total]) {
+                mMasks = mProgressPayload[:masks];
+            }
         }
-        return masks;
     }
 
     //! This will add the pattern to the QR code that represents the error level and the type of mask used to make the code.
@@ -848,160 +883,205 @@ class QRCodeBuilder {
     //! This method returns the index of the "best" mask as defined by having the lowest total penalty score.
     //! The penalty rules are defined by the standard.
     //! The mask with the lowest total score should be the easiest to read by optical scanners.
-    private function _chooseBestMask() as Number {
-        var scores = [];
-        for (var i = 0; i < mMasks.size(); i += 1) {
-            scores.add([0, 0, 0, 0]);
-        }
-        // Score penalty rule number 1
-        // Look for five consecutive squares with the same color.
-        // Each one found gets a penalty of 3 + 1 for every
-        // same color square after the first five in the row.
-        for (var n = 0; n < mMasks.size(); n += 1) {
-            var mask = mMasks[n];
-            var current = mask[0][0];
-            var counter = 0;
-            var total = 0;
-
-            // Examine the mask row wise
-            for (var row = 0; row < mMasks.size(); row += 1) {
-                counter = 0;
-                for (var col = 0; col < mMasks.size(); col += 1) {
-                    var bit = mask[row][col];
-                    if (bit == current) {
-                        counter += 1;
-                    } else {
-                        if (counter >= 5) {
-                            total += (counter - 5) + 3;
-                        }
-                        counter = 1;
-                        current = bit;
-                    }
-                }
-                if (counter >= 5) {
-                    total += (counter - 5) + 3;
-                }
-            }
-            // Examine the mask column wise
-            for (var col = 0; col < mMasks.size(); col += 1) {
-                counter = 0;
-                for (var row = 0; row < mMasks.size(); row += 1) {
-                    var bit = mask[row][col];
-
-                    if (bit == current) {
-                        counter += 1;
-                    } else {
-                        if (counter >= 5) {
-                            total += (counter - 5) + 3;
-                        }
-                        counter = 1;
-                        current = bit;
-                    }
-                }
-                if (counter >= 5) {
-                    total += (counter - 5) + 3;
-                }
-            }
-            scores[n][0] = total;
-        }
-        // Score penalty rule 2
-        // This rule will add 3 to the score for each 2x2 block of the same colored pixels there are.
-        for (var n = 0; n < mMasks.size(); n += 1) {
-            var mask = mMasks[n];
-            count = 0;
-            // Don't examine the 0th and Nth row/column
-            for (var i = 0; i < mMasks.size()-1; i += 1) {
-                for (var j = 0; j < mMasks.size()-1; j += 1) {
-                    if (mask[i][j] == mask[i+1][j] and mask[i][j] == mask[i][j+1] and mask[i][j] == mask[i+1][j+1]) {
-                        count += 1;
-                    }
-                }
-            }
-            scores[n][1] = count * 3;
-        }
-        // Score penalty rule 3
-        // This rule looks for 1011101 within the mask prefixed and/or suffixed by four zeros.
-        var patterns = [['0','0','0','0','1','0','1','1','1','0','1'],
-                    ['1','0','1','1','1','0','1','0','0','0','0']];
-                    //[0,0,0,0,1,0,1,1,1,0,1,0,0,0,0]];
-
-        for (var n = 0; n < mMasks.size(); n += 1) {
-            var mask = mMasks[n];
-            var nmatches = 0;
-
+    private function _chooseBestMask() as Void {
+        if (mProgressPayload.isEmpty()) {
+            var scores = [];
             for (var i = 0; i < mMasks.size(); i += 1) {
-                for (var j = 0; j < mMasks.size(); j += 1) {
-                    for (var pi = 0; pi < patterns.size(); pi += 1) {
-                        var pattern = patterns[pi];
-                        var match = true;
-                        var k = j;
-                        // Look for row matches
-                        for (var ppi = 0; ppi < pattern.size(); ppi += 1) {
-                            var p = pattern[ppi];
-                            if (k >= mask.size() or mask[i][k] != p) {
-                                match = false;
-                                break;
-                            }
-                            k += 1;
-                        }
-                        if (match) {
-                            nmatches += 1;
-                        }
+                scores.add([0, 0, 0, 0]);
+            }
+            mProgressPayload = { :current => 0, :total => 5, :scores => scores };
+        } else {
+            var scores = mProgressPayload[:scores];
+            switch (mProgressPayload[:current]) {
+                case 0: {
+                    // Score penalty rule number 1
+                    // Look for five consecutive squares with the same color.
+                    // Each one found gets a penalty of 3 + 1 for every
+                    // same color square after the first five in the row.
+                    for (var n = 0; n < mMasks.size(); n += 1) {
+                        var mask = mMasks[n];
+                        var current = mask[0][0];
+                        var counter = 0;
+                        var total = 0;
 
-                        match = true;
-                        k = j;
-                        // Look for column matches
-                        for (var ppi = 0; ppi < pattern.size(); ppi += 1) {
-                            var p = pattern[ppi];
-                            if (k >= mask.size() or mask[k][i] != p) {
-                                match = false;
-                                break;
+                        // Examine the mask row wise
+                        for (var row = 0; row < mMasks.size(); row += 1) {
+                            counter = 0;
+                            for (var col = 0; col < mMasks.size(); col += 1) {
+                                var bit = mask[row][col];
+                                if (bit == current) {
+                                    counter += 1;
+                                } else {
+                                    if (counter >= 5) {
+                                        total += (counter - 5) + 3;
+                                    }
+                                    counter = 1;
+                                    current = bit;
+                                }
                             }
-                            k += 1;
+                            if (counter >= 5) {
+                                total += (counter - 5) + 3;
+                            }
                         }
-                        if (match) {
-                            nmatches += 1;
+                        // Examine the mask column wise
+                        for (var col = 0; col < mMasks.size(); col += 1) {
+                            counter = 0;
+                            for (var row = 0; row < mMasks.size(); row += 1) {
+                                var bit = mask[row][col];
+
+                                if (bit == current) {
+                                    counter += 1;
+                                } else {
+                                    if (counter >= 5) {
+                                        total += (counter - 5) + 3;
+                                    }
+                                    counter = 1;
+                                    current = bit;
+                                }
+                            }
+                            if (counter >= 5) {
+                                total += (counter - 5) + 3;
+                            }
+                        }
+                        scores[n][0] = total;
+                    }
+                    mProgressPayload[:scores] = scores;
+                    break;
+                }
+
+                case 1: {
+                    // Score penalty rule 2
+                    // This rule will add 3 to the score for each 2x2 block of the same colored pixels there are.
+                    for (var n = 0; n < mMasks.size(); n += 1) {
+                        var mask = mMasks[n];
+                        var count = 0;
+                        // Don't examine the 0th and Nth row/column
+                        for (var i = 0; i < mMasks.size()-1; i += 1) {
+                            for (var j = 0; j < mMasks.size()-1; j += 1) {
+                                if (mask[i][j] == mask[i+1][j] and mask[i][j] == mask[i][j+1] and mask[i][j] == mask[i+1][j+1]) {
+                                    count += 1;
+                                }
+                            }
+                        }
+                        scores[n][1] = count * 3;
+                    }
+                    mProgressPayload[:scores] = scores;
+                    break;
+                }
+
+                case 2: {
+                    if (!mProgressPayload.hasKey(:step3)) {
+                        // Score penalty rule 3
+                        // This rule looks for 1011101 within the mask prefixed and/or suffixed by four zeros.
+                        var patterns = [
+                            ['0','0','0','0','1','0','1','1','1','0','1'],
+                            ['1','0','1','1','1','0','1','0','0','0','0'],
+                            //['0','0','0','0','1','0','1','1','1','0','1','0','0','0','0']
+                        ];
+                        mProgressPayload.put(:step3, { :current => 0, :total => mMasks.size(), :patterns => patterns });
+                    } else {
+                        var patterns = mProgressPayload[:patterns];
+                        var n = mProgressPayload[:step3][:current];
+                        var mask = mMasks[n];
+                        var nmatches = 0;
+
+                        for (var i = 0; i < mMasks.size(); i += 1) {
+                            for (var j = 0; j < mMasks.size(); j += 1) {
+                                for (var pi = 0; pi < patterns.size(); pi += 1) {
+                                    var pattern = patterns[pi];
+                                    var match = true;
+                                    var k = j;
+                                    // Look for row matches
+                                    for (var ppi = 0; ppi < pattern.size(); ppi += 1) {
+                                        var p = pattern[ppi];
+                                        if (k >= mask.size() or mask[i][k] != p) {
+                                            match = false;
+                                            break;
+                                        }
+                                        k += 1;
+                                    }
+                                    if (match) {
+                                        nmatches += 1;
+                                    }
+
+                                    match = true;
+                                    k = j;
+                                    // Look for column matches
+                                    for (var ppi = 0; ppi < pattern.size(); ppi += 1) {
+                                        var p = pattern[ppi];
+                                        if (k >= mask.size() or mask[k][i] != p) {
+                                            match = false;
+                                            break;
+                                        }
+                                        k += 1;
+                                    }
+                                    if (match) {
+                                        nmatches += 1;
+                                    }
+                                }
+                            }
+                        }
+                        scores[n][2] = nmatches * 40;
+                        mProgressPayload[:scores] = scores;
+                        mProgressPayload[:step3][:current] += 1;
+                        if (mProgressPayload[:step3][:current] < mProgressPayload[:step3][:total]) {
+                            return;
                         }
                     }
+                    break;
+                }
+
+                case 3: {
+                    if (!mProgressPayload.hasKey(:step4)) {
+                        mProgressPayload.put(:step4, { :current => 0, :total => mMasks.size() });
+                    } else {
+                        var n = mProgressPayload[:step4][:current];
+                        // Score the last rule, penalty rule 4. This rule measures how close the pattern is to being 50% black.
+                        // The further it deviates from this this ideal the higher the penalty.
+                        var mask = mMasks[n];
+                        var nblack = 0;
+
+                        for (var i = 0; i < mask.size(); i += 1) {
+                            var row = mask[i];
+                            nblack += _sum(row);
+                        }
+                        var totalPixels = Math.pow(mask.size(), 2);
+                        var ratio = nblack / totalPixels;
+                        var percent = (ratio * 100) - 50;
+                        if (percent < 0) {
+                            percent *= -1;
+                        }
+                        scores[n][3] = ((percent / 5).toNumber() * 10);
+                        mProgressPayload[:scores] = scores;
+                        mProgressPayload[:step4][:current] += 1;
+                        if (mProgressPayload[:step4][:current] < mProgressPayload[:step4][:total]) {
+                            return;
+                        }
+                    }
+                    break;
+                }
+
+                case 4: {
+                    // Calculate the total for each score
+                    var totals = _mult([0], scores.size());
+                    for (var i = 0; i < scores.size(); i += 1) {
+                        for (var j = 0; j < scores[i].size(); j += 1) {
+                            totals[i] += scores[i][j];
+                        }
+                    }
+                    // The lowest total wins
+                    var minIdx = 0;
+                    for (var i = 0; i < totals.size(); i += 1) {
+                        if (totals[i] < totals[minIdx]) {
+                            minIdx = i;
+                        }
+                    }
+                    mMaskIdx = minIdx;
+                    break;
                 }
             }
-            scores[n][2] = nmatches * 40;
+            mProgressPayload[:current] += 1;
         }
-
-        // Score the last rule, penalty rule 4. This rule measures how close the pattern is to being 50% black.
-        // The further it deviates from this this ideal the higher the penalty.
-        for (var n = 0; n < mMasks.size(); n += 1) {
-            var mask = mMasks[n];
-            var nblack = 0;
-
-            for (var i = 0; i < mask.size(); i += 1) {
-                var row = mask[i];
-                nblack += _sum(row);
-            }
-            var totalPixels = Math.pow(mask.size(), 2);
-            var ratio = nblack / totalPixels;
-            var percent = (ratio * 100) - 50;
-            if (percent < 0) {
-                percent *= -1;
-            }
-            scores[n][3] = ((percent / 5).toNumber() * 10);
-        }
-
-        // Calculate the total for each score
-        var totals = _mult([0], scores.size());
-        for (var i = 0; i < scores.size(); i += 1) {
-            for (var j = 0; j < scores[i].size(); j += 1) {
-                totals[i] += scores[i][j];
-            }
-        }
-        // The lowest total wins
-        var minIdx = 0;
-        for (var i = 0; i < totals.size(); i += 1) {
-            if (totals[i] < totals[minIdx]) {
-                minIdx = i;
-            }
-        }
-        return minIdx;
     }
 
     // ***************************************************************
@@ -1014,11 +1094,11 @@ class QRCodeBuilder {
         var binValue = 0;
         var exp = 0;
         while (value != 0) {
-            binValue += ((value % 2).toNumber() * Math.pow(10, exp)).toNumber();
-            value = (value / 2).toNumber();
+            binValue += ((value % 2).toNumber() * Math.pow(10, exp)).toLong();
+            value = (value / 2).toLong();
             exp += 1;
         }
-        return binValue.toNumber().format(Lang.format("%0$1$d", [length]));
+        return binValue.toLong().format(Lang.format("%0$1$d", [length]));
     }
 
     //! This generator yields a set of tuples, where the iterable is broken into n sized chunks.
