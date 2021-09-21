@@ -87,13 +87,7 @@ class QRCodeBuilder {
         mObservable = new Observable();
         mStatus = IDLE;
 
-        System.println("mVersion: " + mVersion);
-
-        System.println("A: " + _binaryString('A'.toNumber(), 8));
-        System.println("+: " + _binaryString('+'.toNumber(), 8));
-        System.println("B: " + _binaryString('B'.toNumber(), 8));
-        System.println("2: " + _binaryString('2'.toNumber(), 8));
-
+        $.log("mVersion: " + mVersion);
     }
 
     public function getStatus() as Status {
@@ -129,8 +123,6 @@ class QRCodeBuilder {
     }
 
     public function start() as Error? {
-        System.println("slice: " + [1,2,3,4,5,6,7].slice(0, null));
-
         if (mTimer != null) {
             return ALREADY_STARTED;
         }
@@ -148,7 +140,7 @@ class QRCodeBuilder {
         if (mTimer == null) {
             return;
         }
-        System.println("builder stopped");
+        $.log("builder stopped");
         mTimer.stop();
         mTimer = null;
         mProgress = null;
@@ -167,7 +159,7 @@ class QRCodeBuilder {
         if (mTimer == null) {
             return;
         }
-        System.println("builder finished");
+        $.log("builder finished");
         mTimer.stop();
         mTimer = null;
         mProgress = null;
@@ -241,24 +233,23 @@ class QRCodeBuilder {
     private function _iterateAddData() as Void {
         switch (mProgress) {
             case ADD_DATA_PREPARE: {
-                System.println("ADD_DATA_PREPARE");
+                $.log("ADD_DATA_PREPARE");
                 // Encode the data into a QR code
                 mData += _binaryString(mMode, 4);
                 mData += _dataLength();
-                System.println("mData: " + mData);
+                $.log("mData: " + mData);
                 mProgressPayload = {};
                 break;
             }
 
             case ADD_DATA_ENCODE: {
-                System.println("ADD_DATA_ENCODE");
+                $.log("ADD_DATA_ENCODE");
                 _encodeAlphaNumeric();
-                System.println("mData: " + mData);
                 break;
             }
 
             case ADD_DATA_TERMINATE_BITS_AND_PROCESS_WORDS: {
-                System.println("ADD_DATA_TERMINATE_BITS_AND_PROCESS_WORDS");
+                $.log("ADD_DATA_TERMINATE_BITS_AND_PROCESS_WORDS");
                 // As per the standard, terminating bits are only supposed to be added after the bit stream is complete
                 var bits = _terminateBits(mData);
                 if (bits != null) {
@@ -278,12 +269,10 @@ class QRCodeBuilder {
             }
 
             case ADD_DATA_NUMERIC_REPRESENTATION: {
-                System.println("ADD_DATA_NUMERIC_REPRESENTATION");
+                $.log("ADD_DATA_NUMERIC_REPRESENTATION");
                 // Get a numeric representation of the data
                 var data as Numbers = [];
-                System.println("mData: " + mData);
                 var chunks as Array<CodeBlock> = _grouped(8, mData.toCharArray(), null);
-                System.println("chunks: " + chunks);
                 for (var i = 0; i < chunks.size(); i += 1) {
                     var chunk = chunks[i];
                     var string = "";
@@ -297,7 +286,7 @@ class QRCodeBuilder {
             }
 
             case ADD_DATA_DATA_BLOCKS: {
-                System.println("ADD_DATA_DATA_BLOCKS");
+                $.log("ADD_DATA_DATA_BLOCKS");
 
                 if (!mProgressPayload.hasKey(:current)) {
                     var data = mProgressPayload[:data];
@@ -314,7 +303,7 @@ class QRCodeBuilder {
                     if (errorInfo[3] != 0) {
                         dataBlockSizes.addAll(_mult([errorInfo[4]], errorInfo[3]));
                     }
-                    System.println("data: " + data);
+                    $.log("data: " + data);
                     // For every block of data, slice the data into the appropriate sized block
                     var currentByte = 0;
                     for (var i = 0; i < dataBlockSizes.size(); i += 1) {
@@ -336,7 +325,6 @@ class QRCodeBuilder {
                     var errorBlocks = mProgressPayload[:errorBlocks];
                     var i = mProgressPayload[:current];
                     var block = dataBlocks[i];
-                    System.println("block: " + block);
                     errorBlocks.add(_makeErrorBlock(block, i));
                     mProgressPayload.put(:errorBlocks, errorBlocks);
 
@@ -349,7 +337,7 @@ class QRCodeBuilder {
             }
 
             case ADD_DATA_DATA_BLOCKS_INTO_BUFFER: {
-                System.println("ADD_DATA_DATA_BLOCKS_INTO_BUFFER");
+                $.log("ADD_DATA_DATA_BLOCKS_INTO_BUFFER");
                 var errorInfo = mProgressPayload[:errorInfo];
                 var dataBlocks = mProgressPayload[:dataBlocks];
                 var errorBlocks = mProgressPayload[:errorBlocks];
@@ -378,7 +366,7 @@ class QRCodeBuilder {
                     }
                 }
                 mData = result;
-                System.println("mData: " + mData);
+                $.log("mData: " + mData);
                 mProgressPayload = {};
                 break;
             }
@@ -416,7 +404,7 @@ class QRCodeBuilder {
             for (var i = 0; i < chars.size(); i += 1) {
                 ascii.add(QRCodeTables.asciiCodes[chars[i]]);
             }
-            System.println("ascii(" + ascii.size() + "): " + ascii);
+            $.log("ascii(" + ascii.size() + "): " + ascii);
             // Now perform the algorithm that will make the ascii into bit fields
             var pairs = _grouped(2, ascii, null);
 
@@ -430,14 +418,10 @@ class QRCodeBuilder {
             var b = tuple[1];
             if (a != null) {
                 if (b != null) {
-                    var ab = _binaryString((45 * a) + b, 11);
-                    // System.println("ab (" + ((45 * a) + b) + "): " + ab);
-                    result += ab;
+                    result += _binaryString((45 * a) + b, 11);
                 } else {
-                    var ares = _binaryString(a, 6);
-                    // System.println("a (" + a + "): " + ares);
                     // This occurs when there is an odd number of characters in the data
-                    result += ares;
+                    result += _binaryString(a, 6);
                 }
             }
             mProgressPayload[:result] = result;
@@ -548,7 +532,7 @@ class QRCodeBuilder {
                 continue;
             } else {
                 // Turn the coefficient into an alpha exponent
-                System.println("coeff: " + coefficient + ", size: " + QRCodeTables.galoisAntilog.size());
+                $.log("coeff: " + coefficient + ", size: " + QRCodeTables.galoisAntilog.size());
                 alphaExp = QRCodeTables.galoisAntilog[coefficient];
             }
             // Add the alpha to the generator polynomial
@@ -571,7 +555,7 @@ class QRCodeBuilder {
         if (msgPolCoeff.size() < codeWordsPerBlock) {
             msgPolCoeff.addAll(_mult([0], (codeWordsPerBlock - msgPolCoeff.size())));
         }
-        System.println("msgPolCoeff: " + msgPolCoeff);
+        $.log("msgPolCoeff: " + msgPolCoeff);
         return msgPolCoeff;
     }
 
@@ -583,7 +567,7 @@ class QRCodeBuilder {
     private function _iterateMakeCode() as Void {
         switch (mProgress) {
             case MAKE_CODE_ADD_PATTERNS: {
-                System.println("MAKE_CODE_ADD_PATTERNS");
+                $.log("MAKE_CODE_ADD_PATTERNS");
                 // Get the size of the underlying matrix
                 var matrixSize = QRCodeTables.versionSize[mVersion];
                 // Create a template matrix we will build the codes with
@@ -600,13 +584,13 @@ class QRCodeBuilder {
                 _addPositionPattern(template);
                 _addVersionPattern(template);
 
-                System.println("template: " + template);
+                $.log("template: " + template);
                 mProgressPayload = { :template => template };
                 break;
             }
 
             case MAKE_CODE_MAKE_MASKS: {
-                // System.println("MAKE_CODE_MAKE_MASKS");
+                $.log("MAKE_CODE_MAKE_MASKS");
                 // Create the various types of masks of the template
                 _makeMasks();
                 break;
@@ -616,7 +600,7 @@ class QRCodeBuilder {
                 if (mProgressPayload.hasKey(:template)) {
                     mProgressPayload = {};
                 }
-                // System.println("MAKE_CODE_CHOOSE_BEST_MASK");
+                $.log("MAKE_CODE_CHOOSE_BEST_MASK");
                 _chooseBestMask();
                 break;
             }
@@ -806,7 +790,6 @@ class QRCodeBuilder {
                 }
                 // Add the type pattern bits to the code
                 _addTypePattern(curMask, QRCodeTables.typeBits[QRCodeTables.error[mError]][n].toCharArray());
-                // System.println("mask tp (" + n + "): " + curMask);
 
                 mProgressPayload[:masks][n] = curMask;
                 mProgressPayload.put(:inside, { :current => curMask.size() - 1, :total => 0, :b => 0, :mv => 0 });
@@ -816,13 +799,10 @@ class QRCodeBuilder {
                 var b = mProgressPayload[:inside][:b];
                 var column = mProgressPayload[:inside][:current];
                 var curMask = mProgressPayload[:masks][n];
+                // This will read the 1's and 0's one at a time
                 var bits = mProgressPayload[:bits];
-                // System.println("??? curMask: " + curMask);
                 // Get the mask pattern
                 var pattern = QRCodeTables.maskPatterns[n];
-                // This will read the 1's and 0's one at a time
-                // System.println("bits: " + bits);
-
                 // These will help us do the up, down, up, down pattern
                 var rowStart = [curMask.size() - 1, 0];
                 var rowStop = [-1, curMask.size()];
@@ -834,7 +814,6 @@ class QRCodeBuilder {
                 if (column == 6) {
                     mProgressPayload[:inside][:current] -= 1;
                     column = mProgressPayload[:inside][:current];
-                    // column -= 1;
                 }
                 // This will let us fill in the pattern right-left, right-left, etc.
                 var columnPair = [column, column - 1];
@@ -876,9 +855,7 @@ class QRCodeBuilder {
                     return;
                 }
             }
-            System.println("mask (" + n + "): " + mProgressPayload[:masks][n]);
-            // masks[n] = curMask;
-            // mProgressPayload[:masks] = masks;
+            $.log("mask (" + n + "): " + mProgressPayload[:masks][n]);
             mProgressPayload[:current] += 1;
             mProgressPayload.remove(:inside);
             if (mProgressPayload[:current] == mProgressPayload[:total]) {
@@ -988,7 +965,7 @@ class QRCodeBuilder {
                             }
                         }
                         scores[n][0] = total;
-                        System.println("score [" + n + "][0] = " + total);
+                        $.log("score [" + n + "][0] = " + total);
                         mProgressPayload[:step1][:current] += 1;
                         if (mProgressPayload[:step1][:current] < mProgressPayload[:step1][:total]) {
                             return;
@@ -1004,7 +981,6 @@ class QRCodeBuilder {
                         mProgressPayload.put(:step2, { :current => 0, :total => mMasks.size() });
                         return;
                     } else {
-                    // for (var n = 0; n < mMasks.size(); n += 1) {
                         var n = mProgressPayload[:step2][:current];
                         var mask = mMasks[n];
                         var count = 0;
@@ -1017,13 +993,12 @@ class QRCodeBuilder {
                             }
                         }
                         scores[n][1] = count * 3;
-                        System.println("score [" + n + "][1] = " + (count * 3));
+                        $.log("score [" + n + "][1] = " + scores[n][1]);
                         mProgressPayload[:step2][:current] += 1;
                         if (mProgressPayload[:step2][:current] < mProgressPayload[:step2][:total]) {
                             return;
                         }
                     }
-                    // mProgressPayload[:scores] = scores;
                     break;
                 }
 
@@ -1091,7 +1066,7 @@ class QRCodeBuilder {
                         }
                         var nmatches = mProgressPayload[:step3][:step1][:nmatches];
                         scores[n][2] = nmatches * 40;
-                        System.println("score [" + n + "][2] = " + (nmatches * 40));
+                        $.log("score [" + n + "][2] = " + scores[n][2]);
 
                         mProgressPayload[:step3][:current] += 1;
                         mProgressPayload[:step3].remove(:step1);
@@ -1120,12 +1095,8 @@ class QRCodeBuilder {
                         var totalPixels = Math.pow(mask.size(), 2);
                         var ratio = nblack / totalPixels;
                         var percent = ((ratio * 100) - 50).abs();
-                        System.println("nblack: " + nblack);
-                        System.println("totalPixels: " + totalPixels);
-                        System.println("ratio: " + ratio);
-                        System.println("percent: " + percent);
                         scores[n][3] = ((Math.floor(percent) / 5) * 10).toNumber();
-                        System.println("score [" + n + "][3] = " + (((Math.floor(percent) / 5) * 10).toNumber()));
+                        $.log("score [" + n + "][3] = " + scores[n][3]);
 
                         mProgressPayload[:step4][:current] += 1;
                         if (mProgressPayload[:step4][:current] < mProgressPayload[:step4][:total]) {
@@ -1136,7 +1107,7 @@ class QRCodeBuilder {
                 }
 
                 case 4: {
-                    System.println("scores: " + scores);
+                    $.log("scores: " + scores);
                     // Calculate the total for each score
                     var totals = _mult([0], scores.size());
                     for (var i = 0; i < scores.size(); i += 1) {
@@ -1144,7 +1115,7 @@ class QRCodeBuilder {
                             totals[i] += scores[i][j];
                         }
                     }
-                    System.println("totals: " + totals);
+                    $.log("totals: " + totals);
                     // The lowest total wins
                     var minIdx = 0;
                     for (var i = 0; i < totals.size(); i += 1) {
@@ -1153,7 +1124,7 @@ class QRCodeBuilder {
                         }
                     }
                     mMaskIdx = minIdx;
-                    System.println("mMaskIdx: " + mMaskIdx);
+                    $.log("mMaskIdx: " + mMaskIdx);
                     break;
                 }
             }
