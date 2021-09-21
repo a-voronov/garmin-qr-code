@@ -787,6 +787,7 @@ class QRCodeBuilder {
             }
             // Add the type pattern bits to the code
             _addTypePattern(curMask, QRCodeTables.typeBits[QRCodeTables.error[mError]][n].toCharArray());
+            System.println("mask tp (" + n + "): " + curMask);
             // Get the mask pattern
             var pattern = QRCodeTables.maskPatterns[n];
             // This will read the 1's and 0's one at a time
@@ -803,7 +804,7 @@ class QRCodeBuilder {
             // The data pattern is added using pairs of columns
             for (var column = curMask.size() - 1; column > 0; column -= 2) {
                 // The vertical timing pattern is an exception to the rules, move the column counter over by one
-                if (column <= 6) {
+                if (column == 6) {
                     column -= 1;
                 }
                 // This will let us fill in the pattern right-left, right-left, etc.
@@ -838,6 +839,7 @@ class QRCodeBuilder {
                     }
                 }
             }
+            System.println("mask (" + n + "): " + curMask);
             masks[n] = curMask;
             mProgressPayload[:masks] = masks;
             mProgressPayload[:current] += 1;
@@ -898,16 +900,20 @@ class QRCodeBuilder {
                     // Look for five consecutive squares with the same color.
                     // Each one found gets a penalty of 3 + 1 for every
                     // same color square after the first five in the row.
-                    for (var n = 0; n < mMasks.size(); n += 1) {
+                    if (!mProgressPayload.hasKey(:step1)) {
+                        mProgressPayload.put(:step1, { :current => 0, :total => mMasks.size() });
+                        return;
+                    } else {
+                        var n = mProgressPayload[:step1][:current];
                         var mask = mMasks[n];
                         var current = mask[0][0];
                         var counter = 0;
                         var total = 0;
 
                         // Examine the mask row wise
-                        for (var row = 0; row < mMasks.size(); row += 1) {
+                        for (var row = 0; row < mask.size(); row += 1) {
                             counter = 0;
-                            for (var col = 0; col < mMasks.size(); col += 1) {
+                            for (var col = 0; col < mask.size(); col += 1) {
                                 var bit = mask[row][col];
                                 if (bit == current) {
                                     counter += 1;
@@ -924,9 +930,9 @@ class QRCodeBuilder {
                             }
                         }
                         // Examine the mask column wise
-                        for (var col = 0; col < mMasks.size(); col += 1) {
+                        for (var col = 0; col < mask.size(); col += 1) {
                             counter = 0;
-                            for (var row = 0; row < mMasks.size(); row += 1) {
+                            for (var row = 0; row < mask.size(); row += 1) {
                                 var bit = mask[row][col];
 
                                 if (bit == current) {
@@ -944,28 +950,42 @@ class QRCodeBuilder {
                             }
                         }
                         scores[n][0] = total;
+                        System.println("score [" + n + "][0] = " + total);
+                        mProgressPayload[:step1][:current] += 1;
+                        if (mProgressPayload[:step1][:current] < mProgressPayload[:step1][:total]) {
+                            return;
+                        }
                     }
-                    mProgressPayload[:scores] = scores;
                     break;
                 }
 
                 case 1: {
                     // Score penalty rule 2
                     // This rule will add 3 to the score for each 2x2 block of the same colored pixels there are.
-                    for (var n = 0; n < mMasks.size(); n += 1) {
+                    if (!mProgressPayload.hasKey(:step2)) {
+                        mProgressPayload.put(:step2, { :current => 0, :total => mMasks.size() });
+                        return;
+                    } else {
+                    // for (var n = 0; n < mMasks.size(); n += 1) {
+                        var n = mProgressPayload[:step2][:current];
                         var mask = mMasks[n];
                         var count = 0;
                         // Don't examine the 0th and Nth row/column
-                        for (var i = 0; i < mMasks.size()-1; i += 1) {
-                            for (var j = 0; j < mMasks.size()-1; j += 1) {
+                        for (var i = 0; i < mask.size()-1; i += 1) {
+                            for (var j = 0; j < mask.size()-1; j += 1) {
                                 if (mask[i][j] == mask[i+1][j] and mask[i][j] == mask[i][j+1] and mask[i][j] == mask[i+1][j+1]) {
                                     count += 1;
                                 }
                             }
                         }
                         scores[n][1] = count * 3;
+                        System.println("score [" + n + "][1] = " + (count * 3));
+                        mProgressPayload[:step2][:current] += 1;
+                        if (mProgressPayload[:step2][:current] < mProgressPayload[:step2][:total]) {
+                            return;
+                        }
                     }
-                    mProgressPayload[:scores] = scores;
+                    // mProgressPayload[:scores] = scores;
                     break;
                 }
 
@@ -979,14 +999,19 @@ class QRCodeBuilder {
                             //['0','0','0','0','1','0','1','1','1','0','1','0','0','0','0']
                         ];
                         mProgressPayload.put(:step3, { :current => 0, :total => mMasks.size(), :patterns => patterns });
+                        return;
                     } else {
-                        var patterns = mProgressPayload[:patterns];
+                        var patterns = mProgressPayload[:step3][:patterns];
                         var n = mProgressPayload[:step3][:current];
                         var mask = mMasks[n];
-                        var nmatches = 0;
 
-                        for (var i = 0; i < mMasks.size(); i += 1) {
-                            for (var j = 0; j < mMasks.size(); j += 1) {
+                        if (!mProgressPayload[:step3].hasKey(:step1)) {
+                            mProgressPayload[:step3].put(:step1, { :current => 0, :total => mask.size(), :nmatches => 0 });
+                            return;
+                        } else {
+                            var nmatches = mProgressPayload[:step3][:step1][:nmatches];
+                            var i = mProgressPayload[:step3][:step1][:current];
+                            for (var j = 0; j < mask.size(); j += 1) {
                                 for (var pi = 0; pi < patterns.size(); pi += 1) {
                                     var pattern = patterns[pi];
                                     var match = true;
@@ -1020,10 +1045,18 @@ class QRCodeBuilder {
                                     }
                                 }
                             }
+                            mProgressPayload[:step3][:step1][:nmatches] = nmatches;
+                            mProgressPayload[:step3][:step1][:current] += 1;
+                            if (mProgressPayload[:step3][:step1][:current] < mProgressPayload[:step3][:step1][:total] - 1) {
+                                return;
+                            }
                         }
+                        var nmatches = mProgressPayload[:step3][:step1][:nmatches];
                         scores[n][2] = nmatches * 40;
-                        mProgressPayload[:scores] = scores;
+                        System.println("score [" + n + "][2] = " + (nmatches * 40));
+
                         mProgressPayload[:step3][:current] += 1;
+                        mProgressPayload[:step3].remove(:step1);
                         if (mProgressPayload[:step3][:current] < mProgressPayload[:step3][:total]) {
                             return;
                         }
@@ -1034,6 +1067,7 @@ class QRCodeBuilder {
                 case 3: {
                     if (!mProgressPayload.hasKey(:step4)) {
                         mProgressPayload.put(:step4, { :current => 0, :total => mMasks.size() });
+                        return;
                     } else {
                         var n = mProgressPayload[:step4][:current];
                         // Score the last rule, penalty rule 4. This rule measures how close the pattern is to being 50% black.
@@ -1047,12 +1081,14 @@ class QRCodeBuilder {
                         }
                         var totalPixels = Math.pow(mask.size(), 2);
                         var ratio = nblack / totalPixels;
-                        var percent = (ratio * 100) - 50;
-                        if (percent < 0) {
-                            percent *= -1;
-                        }
-                        scores[n][3] = ((percent / 5).toNumber() * 10);
-                        mProgressPayload[:scores] = scores;
+                        var percent = ((ratio * 100) - 50).abs();
+                        System.println("nblack: " + nblack);
+                        System.println("totalPixels: " + totalPixels);
+                        System.println("ratio: " + ratio);
+                        System.println("percent: " + percent);
+                        scores[n][3] = ((Math.floor(percent) / 5) * 10).toNumber();
+                        System.println("score [" + n + "][3] = " + (((Math.floor(percent) / 5) * 10).toNumber()));
+
                         mProgressPayload[:step4][:current] += 1;
                         if (mProgressPayload[:step4][:current] < mProgressPayload[:step4][:total]) {
                             return;
@@ -1062,6 +1098,7 @@ class QRCodeBuilder {
                 }
 
                 case 4: {
+                    System.println("scores: " + scores);
                     // Calculate the total for each score
                     var totals = _mult([0], scores.size());
                     for (var i = 0; i < scores.size(); i += 1) {
@@ -1069,6 +1106,7 @@ class QRCodeBuilder {
                             totals[i] += scores[i][j];
                         }
                     }
+                    System.println("totals: " + totals);
                     // The lowest total wins
                     var minIdx = 0;
                     for (var i = 0; i < totals.size(); i += 1) {
@@ -1077,6 +1115,7 @@ class QRCodeBuilder {
                         }
                     }
                     mMaskIdx = minIdx;
+                    System.println("mMaskIdx: " + mMaskIdx);
                     break;
                 }
             }
