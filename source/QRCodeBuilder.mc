@@ -224,6 +224,8 @@ class QRCodeBuilder {
         if ((subTotal != null and subCurrent != null) and subCurrent < subTotal) {
             return;
         }
+        mProgressPayload.remove(:current);
+        mProgressPayload.remove(:total);
         mProgress += 1;
         _finishIfNeeded();
     }
@@ -252,8 +254,6 @@ class QRCodeBuilder {
                 System.println("ADD_DATA_ENCODE");
                 _encodeAlphaNumeric();
                 System.println("mData: " + mData);
-                // _encodeBinary();
-                // mProgressPayload = {};
                 break;
             }
 
@@ -298,38 +298,53 @@ class QRCodeBuilder {
 
             case ADD_DATA_DATA_BLOCKS: {
                 System.println("ADD_DATA_DATA_BLOCKS");
-                var data = mProgressPayload[:data];
-                // This is the error information for the code
-                var errorInfo as Numbers = QRCodeTables.eccwbi[mVersion][QRCodeTables.error[mError]];
-                // This will hold our data blocks
-                var dataBlocks as Array<NumbersOrNulls> = [];
-                // This will hold our error blocks
-                var errorBlocks as Array<Numbers> = [];
-                // Some codes have the data sliced into two different sized blocks
-                // for example, first two 14 word sized blocks, then four 15 word sized blocks.
-                // This means that slicing size can change over time.
-                var dataBlockSizes = _mult([errorInfo[2]], errorInfo[1]);
-                if (errorInfo[3] != 0) {
-                    dataBlockSizes.addAll(_mult([errorInfo[4]], errorInfo[3]));
-                }
-                System.println("data: " + data);
-                // For every block of data, slice the data into the appropriate sized block
-                var currentByte = 0;
-                for (var i = 0; i < dataBlockSizes.size(); i += 1) {
-                    var nDataBlocks = dataBlockSizes[i];
-                    dataBlocks.add(data.slice(currentByte, currentByte + nDataBlocks));
-                    currentByte += nDataBlocks;
-                }
-                if (currentByte < data.size()) {
-                    throw new Lang.SerializationException("Too much data for this code version.");
-                }
-                // Calculate the error blocks
-                for (var i = 0; i < dataBlocks.size(); i += 1) {
+
+                if (!mProgressPayload.hasKey(:current)) {
+                    var data = mProgressPayload[:data];
+                    // This is the error information for the code
+                    var errorInfo as Numbers = QRCodeTables.eccwbi[mVersion][QRCodeTables.error[mError]];
+                    // This will hold our data blocks
+                    var dataBlocks as Array<NumbersOrNulls> = [];
+                    // This will hold our error blocks
+                    var errorBlocks as Array<Numbers> = [];
+                    // Some codes have the data sliced into two different sized blocks
+                    // for example, first two 14 word sized blocks, then four 15 word sized blocks.
+                    // This means that slicing size can change over time.
+                    var dataBlockSizes = _mult([errorInfo[2]], errorInfo[1]);
+                    if (errorInfo[3] != 0) {
+                        dataBlockSizes.addAll(_mult([errorInfo[4]], errorInfo[3]));
+                    }
+                    System.println("data: " + data);
+                    // For every block of data, slice the data into the appropriate sized block
+                    var currentByte = 0;
+                    for (var i = 0; i < dataBlockSizes.size(); i += 1) {
+                        var nDataBlocks = dataBlockSizes[i];
+                        dataBlocks.add(data.slice(currentByte, currentByte + nDataBlocks));
+                        currentByte += nDataBlocks;
+                    }
+                    if (currentByte < data.size()) {
+                        throw new Lang.SerializationException("Too much data for this code version.");
+                    }
+                    mProgressPayload.put(:current, 0);
+                    mProgressPayload.put(:total, dataBlocks.size());
+                    mProgressPayload.put(:errorInfo, errorInfo);
+                    mProgressPayload.put(:dataBlocks, dataBlocks);
+                    mProgressPayload.put(:errorBlocks, errorBlocks);
+                } else {
+                    // Calculate the error blocks
+                    var dataBlocks = mProgressPayload[:dataBlocks];
+                    var errorBlocks = mProgressPayload[:errorBlocks];
+                    var i = mProgressPayload[:current];
                     var block = dataBlocks[i];
                     System.println("block: " + block);
                     errorBlocks.add(_makeErrorBlock(block, i));
+                    mProgressPayload.put(:errorBlocks, errorBlocks);
+
+                    mProgressPayload[:current] += 1;
+                    if (mProgressPayload[:current] < mProgressPayload[:total]) {
+                        return;
+                    }
                 }
-                mProgressPayload = { :errorInfo => errorInfo, :dataBlocks => dataBlocks, :errorBlocks => errorBlocks };
                 break;
             }
 
@@ -416,11 +431,11 @@ class QRCodeBuilder {
             if (a != null) {
                 if (b != null) {
                     var ab = _binaryString((45 * a) + b, 11);
-                    System.println("ab (" + ((45 * a) + b) + "): " + ab);
+                    // System.println("ab (" + ((45 * a) + b) + "): " + ab);
                     result += ab;
                 } else {
                     var ares = _binaryString(a, 6);
-                    System.println("a (" + a + "): " + ares);
+                    // System.println("a (" + a + "): " + ares);
                     // This occurs when there is an odd number of characters in the data
                     result += ares;
                 }
@@ -591,7 +606,7 @@ class QRCodeBuilder {
             }
 
             case MAKE_CODE_MAKE_MASKS: {
-                System.println("MAKE_CODE_MAKE_MASKS");
+                // System.println("MAKE_CODE_MAKE_MASKS");
                 // Create the various types of masks of the template
                 _makeMasks();
                 break;
@@ -601,7 +616,7 @@ class QRCodeBuilder {
                 if (mProgressPayload.hasKey(:template)) {
                     mProgressPayload = {};
                 }
-                System.println("MAKE_CODE_CHOOSE_BEST_MASK");
+                // System.println("MAKE_CODE_CHOOSE_BEST_MASK");
                 _chooseBestMask();
                 break;
             }
@@ -777,46 +792,62 @@ class QRCodeBuilder {
             mProgressPayload.put(:current, 0);
             mProgressPayload.put(:total, masks.size());
             mProgressPayload.put(:masks, masks);
+            mProgressPayload.put(:bits, mData.toCharArray());
+            return;
         } else {
-            var masks = mProgressPayload[:masks];
-            var template = mProgressPayload[:template];
             var n = mProgressPayload[:current];
-            var curMask as CodeData = [];
-            for (var r = 0; r < template.size(); r += 1) {
-                curMask.add(template[r].slice(0, null));
-            }
-            // Add the type pattern bits to the code
-            _addTypePattern(curMask, QRCodeTables.typeBits[QRCodeTables.error[mError]][n].toCharArray());
-            System.println("mask tp (" + n + "): " + curMask);
-            // Get the mask pattern
-            var pattern = QRCodeTables.maskPatterns[n];
-            // This will read the 1's and 0's one at a time
-            var bits = mData.toCharArray();
-            System.println("bits: " + bits);
-            var b = 0;
 
-            // These will help us do the up, down, up, down pattern
-            var rowStart = [curMask.size() - 1, 0];
-            var rowStop = [-1, curMask.size()];
-            var direction = [-1, 1];
-            var mv = 0;
+            if (!mProgressPayload.hasKey(:inside)) {
+                var template = mProgressPayload[:template];
 
-            // The data pattern is added using pairs of columns
-            for (var column = curMask.size() - 1; column > 0; column -= 2) {
+                var curMask as CodeData = [];
+                for (var r = 0; r < template.size(); r += 1) {
+                    curMask.add(template[r].slice(0, null));
+                }
+                // Add the type pattern bits to the code
+                _addTypePattern(curMask, QRCodeTables.typeBits[QRCodeTables.error[mError]][n].toCharArray());
+                // System.println("mask tp (" + n + "): " + curMask);
+
+                mProgressPayload[:masks][n] = curMask;
+                mProgressPayload.put(:inside, { :current => curMask.size() - 1, :total => 0, :b => 0, :mv => 0 });
+
+                return;
+            } else {
+                var b = mProgressPayload[:inside][:b];
+                var column = mProgressPayload[:inside][:current];
+                var curMask = mProgressPayload[:masks][n];
+                var bits = mProgressPayload[:bits];
+                // System.println("??? curMask: " + curMask);
+                // Get the mask pattern
+                var pattern = QRCodeTables.maskPatterns[n];
+                // This will read the 1's and 0's one at a time
+                // System.println("bits: " + bits);
+
+                // These will help us do the up, down, up, down pattern
+                var rowStart = [curMask.size() - 1, 0];
+                var rowStop = [-1, curMask.size()];
+                var direction = [-1, 1];
+                var mv = mProgressPayload[:inside][:mv];
+
+                // The data pattern is added using pairs of columns
                 // The vertical timing pattern is an exception to the rules, move the column counter over by one
                 if (column == 6) {
-                    column -= 1;
+                    mProgressPayload[:inside][:current] -= 1;
+                    column = mProgressPayload[:inside][:current];
+                    // column -= 1;
                 }
                 // This will let us fill in the pattern right-left, right-left, etc.
                 var columnPair = [column, column - 1];
                 // Go through each row in the pattern moving up, then down
                 if (mv >= direction.size()) {
-                    mv = 0;
+                    mProgressPayload[:inside][:mv] = 0;
+                    mv = mProgressPayload[:inside][:mv];
                 }
                 var rStart = rowStart[mv];
                 var rStop = rowStop[mv];
                 var dir = direction[mv];
-                mv += 1;
+                mProgressPayload[:inside][:mv] += 1;
+                mv = mProgressPayload[:inside][:mv];
 
                 for (var row = rStart; (dir > 0 ? row < rStop : row > rStop); row += dir) {
                     // Fill in the right then left column
@@ -838,11 +869,18 @@ class QRCodeBuilder {
                         curMask[row][col] = (pattern.invoke(row, col) ? (bit ^ 1) : bit).toString().toCharArray()[0];
                     }
                 }
+
+                mProgressPayload[:inside][:b] = b;
+                mProgressPayload[:inside][:current] -= 2;
+                if (mProgressPayload[:inside][:current] > mProgressPayload[:inside][:total]) {
+                    return;
+                }
             }
-            System.println("mask (" + n + "): " + curMask);
-            masks[n] = curMask;
-            mProgressPayload[:masks] = masks;
+            System.println("mask (" + n + "): " + mProgressPayload[:masks][n]);
+            // masks[n] = curMask;
+            // mProgressPayload[:masks] = masks;
             mProgressPayload[:current] += 1;
+            mProgressPayload.remove(:inside);
             if (mProgressPayload[:current] == mProgressPayload[:total]) {
                 mMasks = mProgressPayload[:masks];
             }
