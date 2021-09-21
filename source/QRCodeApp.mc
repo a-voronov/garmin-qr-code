@@ -3,14 +3,12 @@ import Toybox.Lang;
 import Toybox.System;
 
 class QRCodeApp extends Application.AppBase {
-    // private var mOptimizer as QRCodeOptimizer;
     private var mBuilder as QRCodeBuilder;
 
     function initialize() {
         AppBase.initialize();
 
-        mBuilder = new QRCodeBuilder("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$%*+-./:", QRCodeBuilder.M);
-        // mOptimizer = new QRCodeOptimizer(mCode);
+        mBuilder = new QRCodeBuilder("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$%*+-./:", QRCodeBuilder.L);
     }
 
     function onStart(state as Dictionary?) as Void {
@@ -22,9 +20,8 @@ class QRCodeApp extends Application.AppBase {
     }
 
     function onStop(state as Dictionary?) as Void {
-        System.println("app.stopped");
+        $.log("app.stopped");
         mBuilder.stop();
-        // mOptimizer.stop();
     }
 
     function getInitialView() as Array<Views or InputDelegates>? {

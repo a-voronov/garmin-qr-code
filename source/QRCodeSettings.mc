@@ -40,4 +40,8 @@ module QRCodeSettings {
     function getBuildingTimeInterval() as Number {
         return 50;
     }
+
+    function criticalInputSize() as Number {
+        return 250;
+    }
 }

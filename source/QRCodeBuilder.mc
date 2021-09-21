@@ -626,7 +626,11 @@ class QRCodeBuilder {
                     mProgressPayload = {};
                 }
                 $.log("MAKE_CODE_CHOOSE_BEST_MASK");
-                _chooseBestMask();
+                if (mInput.length() > QRCodeSettings.criticalInputSize()) {
+                    mMaskIdx = 0;
+                } else {
+                    _chooseBestMask();
+                }
                 break;
             }
         }
@@ -795,7 +799,7 @@ class QRCodeBuilder {
     //! The template parameter is a code matrix that will server as the base for all the generated masks.
     private function _makeMasks() as Void {
         if (!mProgressPayload.hasKey(:current)) {
-            var nmasks = QRCodeTables.maskPatterns.size();
+            var nmasks = mInput.length() > QRCodeSettings.criticalInputSize() ? 1 : QRCodeTables.maskPatterns.size();
             var masks = new [nmasks];
 
             mProgressPayload.put(:current, 0);
@@ -925,7 +929,7 @@ class QRCodeBuilder {
     //! This method returns the index of the "best" mask as defined by having the lowest total penalty score.
     //! The penalty rules are defined by the standard.
     //! The mask with the lowest total score should be the easiest to read by optical scanners.
-    private function _chooseBestMask() as Void {
+    private function __chooseBestMask() as Void {
         if (mProgressPayload.isEmpty()) {
             var scores = [];
             for (var i = 0; i < mMasks.size(); i += 1) {
@@ -974,7 +978,6 @@ class QRCodeBuilder {
                             counter = 0;
                             for (var row = 0; row < mask.size(); row += 1) {
                                 var bit = mask[row][col];
-
                                 if (bit == current) {
                                     counter += 1;
                                 } else {
@@ -1132,6 +1135,211 @@ class QRCodeBuilder {
                 }
 
                 case 4: {
+                    $.log("scores: " + scores);
+                    // Calculate the total for each score
+                    var totals = _mult([0], scores.size());
+                    for (var i = 0; i < scores.size(); i += 1) {
+                        for (var j = 0; j < scores[i].size(); j += 1) {
+                            totals[i] += scores[i][j];
+                        }
+                    }
+                    $.log("totals: " + totals);
+                    // The lowest total wins
+                    var minIdx = 0;
+                    for (var i = 0; i < totals.size(); i += 1) {
+                        if (totals[i] < totals[minIdx]) {
+                            minIdx = i;
+                        }
+                    }
+                    mMaskIdx = minIdx;
+                    $.log("mMaskIdx: " + mMaskIdx);
+                    break;
+                }
+            }
+            mProgressPayload[:current] += 1;
+        }
+    }
+
+    private function _chooseBestMask() as Void {
+        if (mProgressPayload.isEmpty()) {
+            var scores = [];
+            for (var i = 0; i < mMasks.size(); i += 1) {
+                scores.add([0, 0, 0, 0]);
+            }
+            mProgressPayload = { :current => 0, :total => 2, :scores => scores };
+        } else {
+            var scores = mProgressPayload[:scores];
+            switch (mProgressPayload[:current]) {
+                case 0: {
+                    if (!mProgressPayload.hasKey(:inner)) {
+                        mProgressPayload.put(:inner, { :current => 0, :total => mMasks.size(), :nblack => 0 });
+                        return;
+                    } else {
+                        var n = mProgressPayload[:inner][:current];
+                        var mask = mMasks[n];
+                        if (!mProgressPayload[:inner].hasKey(:sub)) {
+                            mProgressPayload[:inner].put(:sub, {
+                                :current => 0,
+                                :total => mask.size(),
+                                :current1 => mask[0][0],
+                                :current2 => mask[0][0],
+                                :total1 => 0,
+                                :count => 0,
+                                :nmatches => 0
+                            });
+                            return;
+                        } else {
+                            var i = mProgressPayload[:inner][:sub][:current];
+
+                            // 1 <<<<<<
+                            var current1 = mProgressPayload[:inner][:sub][:current1];
+                            var current2 = mProgressPayload[:inner][:sub][:current2];
+                            var total = mProgressPayload[:inner][:sub][:total1];
+                            // 1 >>>>>>
+
+                            // 2 <<<<<<
+                            var count = mProgressPayload[:inner][:sub][:count];
+                            // 2 >>>>>>
+
+                            // 3 <<<<<<
+                            var nmatches = mProgressPayload[:inner][:sub][:nmatches];
+                            var patterns = [
+                                ['0','0','0','0','1','0','1','1','1','0','1'],
+                                ['1','0','1','1','1','0','1','0','0','0','0'],
+                                //['0','0','0','0','1','0','1','1','1','0','1','0','0','0','0']
+                            ];
+                            // 3 >>>>>>
+
+                            var counter1 = 0;
+                            for (var j = 0; j < mask.size(); j += 1) {
+
+                                // 1 <<<<<<
+                                var bit1 = mask[i][j];
+                                if (bit1 == current1) {
+                                    counter1 += 1;
+                                } else {
+                                    if (counter1 >= 5) {
+                                        total += (counter1 - 5) + 3;
+                                    }
+                                    counter1 = 1;
+                                    current1 = bit1;
+                                }
+
+                                if (i == 0) {
+                                    var counter2 = 0;
+                                    for (var i2 = 0; i2 < mask.size(); i2 += 1) {
+                                        var bit2 = mask[i2][j];
+                                        if (bit2 == current2) {
+                                            counter2 += 1;
+                                        } else {
+                                            if (counter2 >= 5) {
+                                                total += (counter2 - 5) + 3;
+                                            }
+                                            counter2 = 1;
+                                            current2 = bit2;
+                                        }
+                                    }
+                                    if (counter2 >= 5) {
+                                        total += (counter2 - 5) + 3;
+                                    }
+                                }
+                                // 1 >>>>>>
+
+                                // 2 <<<<<<
+                                if (i < mask.size()-1 and j < mask.size()-1) {
+                                    if (mask[i][j] == mask[i+1][j] and mask[i][j] == mask[i][j+1] and mask[i][j] == mask[i+1][j+1]) {
+                                        count += 1;
+                                    }
+                                }
+                                // 2 >>>>>>
+
+                                // 3 <<<<<<
+                                for (var pi = 0; pi < patterns.size(); pi += 1) {
+                                    var pattern = patterns[pi];
+                                    var match = true;
+                                    var k = j;
+                                    // Look for row matches
+                                    for (var ppi = 0; ppi < pattern.size(); ppi += 1) {
+                                        var p = pattern[ppi];
+                                        if (k >= mask.size() or mask[i][k] != p) {
+                                            match = false;
+                                            break;
+                                        }
+                                        k += 1;
+                                    }
+                                    if (match) {
+                                        nmatches += 1;
+                                    }
+                                    match = true;
+                                    k = j;
+                                    // Look for column matches
+                                    for (var ppi = 0; ppi < pattern.size(); ppi += 1) {
+                                        var p = pattern[ppi];
+                                        if (k >= mask.size() or mask[k][i] != p) {
+                                            match = false;
+                                            break;
+                                        }
+                                        k += 1;
+                                    }
+                                    if (match) {
+                                        nmatches += 1;
+                                    }
+                                }
+                                // 3 >>>>>>
+
+                                // 4 <<<<<<
+                                var num = mask[i][j].toString().toNumber();
+                                if (num != null) {
+                                    mProgressPayload[:inner][:nblack] += num;
+                                }
+                                // 4 >>>>>>
+                            }
+                            if (counter1 >= 5) {
+                                total += (counter1 - 5) + 3;
+                            }
+
+                            mProgressPayload[:inner][:sub][:total1] = total;
+                            mProgressPayload[:inner][:sub][:count] = count;
+                            mProgressPayload[:inner][:sub][:nmatches] = nmatches;
+                            mProgressPayload[:inner][:sub][:current1] = current1;
+                            mProgressPayload[:inner][:sub][:current2] = current2;
+
+                            mProgressPayload[:inner][:sub][:current] += 1;
+                            if (mProgressPayload[:inner][:sub][:current] < mProgressPayload[:inner][:sub][:total]) {
+                                return;
+                            }
+                        }
+
+                        // 1 <<<<<<
+                        scores[n][0] = mProgressPayload[:inner][:sub][:total1];
+                        // 1 >>>>>>
+
+                        // 2 <<<<<<
+                        scores[n][1] = mProgressPayload[:inner][:sub][:count] * 3;
+                        // 2 >>>>>>
+
+                        // 3 <<<<<<
+                        scores[n][2] = mProgressPayload[:inner][:sub][:nmatches] * 40;
+                        // 3 >>>>>>
+
+                        // 4 <<<<<<
+                        var totalPixels = Math.pow(mask.size(), 2);
+                        var ratio = mProgressPayload[:inner][:nblack] / totalPixels;
+                        var percent = ((ratio * 100) - 50).abs();
+                        scores[n][3] = ((Math.floor(percent) / 5) * 10).toNumber();
+                        // 4 >>>>>>
+
+                        mProgressPayload[:inner][:current] += 1;
+                        mProgressPayload[:inner][:nblack] = 0;
+                        mProgressPayload[:inner].remove(:sub);
+                        if (mProgressPayload[:inner][:current] < mProgressPayload[:inner][:total]) {
+                            return;
+                        }
+                    }
+                    break;
+                }
+
+                case 1: {
                     $.log("scores: " + scores);
                     // Calculate the total for each score
                     var totals = _mult([0], scores.size());
