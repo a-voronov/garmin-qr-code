@@ -33,24 +33,15 @@ class QRCodeBuilder {
     }
 
     enum Progress {
-        // Payload: {}
         ADD_DATA_PREPARE,
-        // Payload: Subroutine => { :current as Number, :total as Number, result as String, pairs as Array<Numbers> }
         ADD_DATA_ENCODE,
-        // Payload: {}
         ADD_DATA_TERMINATE_BITS_AND_PROCESS_WORDS,
-        // Payload: {}
         ADD_DATA_NUMERIC_REPRESENTATION,
-        // Payload: { :data as Numbers }
         ADD_DATA_DATA_BLOCKS,
-        // Payload: { :errorInfo as Numbers, :dataBlocks as Array<NumbersOrNulls>, :errorBlocks as Array<Numbers> }
         ADD_DATA_DATA_BLOCKS_INTO_BUFFER,
 
-        // Payload: {}
         MAKE_CODE_ADD_PATTERNS,
-        // Payload: { :template as CodeData } + Subroutine => { :current as Number, :total as Number, :masks as CodeMasks }
         MAKE_CODE_MAKE_MASKS,
-        // Payload: Subroutine => { :current as Number, :total as Number }
         MAKE_CODE_CHOOSE_BEST_MASK
     }
 
@@ -159,7 +150,7 @@ class QRCodeBuilder {
         if (mTimer == null) {
             return;
         }
-        $.log("builder finished");
+        $.log("builder finished: " + error);
         mTimer.stop();
         mTimer = null;
         mProgress = null;
@@ -198,6 +189,10 @@ class QRCodeBuilder {
                     _finish(INVALID_INPUT);
                     return;
                 } catch (e) {
+                    if (e instanceof Lang.Exception) {
+                        $.log("Error: " + e.getErrorMessage());
+                        e.printStackTrace();
+                    }
                     _finish(UNKNOWN);
                     return;
                 }
@@ -271,17 +266,24 @@ class QRCodeBuilder {
             case ADD_DATA_NUMERIC_REPRESENTATION: {
                 $.log("ADD_DATA_NUMERIC_REPRESENTATION");
                 // Get a numeric representation of the data
-                var data as Numbers = [];
-                var chunks as Array<CodeBlock> = _grouped(8, mData.toCharArray(), null);
-                for (var i = 0; i < chunks.size(); i += 1) {
+                if (!mProgressPayload.hasKey(:current)) {
+                    var data as Numbers = [];
+                    var chunks as Array<CodeBlock> = _grouped(8, mData.toCharArray(), null);
+                    mProgressPayload = { :current => 0, :total => chunks.size(), :chunks => chunks, :data => data };
+                } else {
+                    var chunks = mProgressPayload[:chunks];
+                    var i = mProgressPayload[:current];
                     var chunk = chunks[i];
                     var string = "";
                     for (var c = 0; c < chunk.size(); c += 1) {
                         string += chunk[c].toString();
                     }
-                    data.add(string.toNumberWithBase(2));
+                    mProgressPayload[:data].add(string.toNumberWithBase(2));
+                    mProgressPayload[:current] += 1;
+                    if (mProgressPayload[:current] < mProgressPayload[:total]) {
+                        return;
+                    }
                 }
-                mProgressPayload = { :data => data };
                 break;
             }
 
@@ -322,13 +324,15 @@ class QRCodeBuilder {
                 } else {
                     // Calculate the error blocks
                     var dataBlocks = mProgressPayload[:dataBlocks];
-                    var errorBlocks = mProgressPayload[:errorBlocks];
+                    // var errorBlocks = mProgressPayload[:errorBlocks];
                     var i = mProgressPayload[:current];
                     var block = dataBlocks[i];
-                    errorBlocks.add(_makeErrorBlock(block, i));
-                    mProgressPayload.put(:errorBlocks, errorBlocks);
-
-                    mProgressPayload[:current] += 1;
+                    _makeErrorBlock(block, i);
+                    if (mProgressPayload[:errorBlock][:current] >= mProgressPayload[:errorBlock][:total]) {
+                        mProgressPayload[:errorBlocks].add(mProgressPayload[:errorBlock][:msgPolCoeff]);
+                        mProgressPayload.remove(:errorBlock);
+                        mProgressPayload[:current] += 1;
+                    }
                     if (mProgressPayload[:current] < mProgressPayload[:total]) {
                         return;
                     }
@@ -338,36 +342,43 @@ class QRCodeBuilder {
 
             case ADD_DATA_DATA_BLOCKS_INTO_BUFFER: {
                 $.log("ADD_DATA_DATA_BLOCKS_INTO_BUFFER");
-                var errorInfo = mProgressPayload[:errorInfo];
-                var dataBlocks = mProgressPayload[:dataBlocks];
-                var errorBlocks = mProgressPayload[:errorBlocks];
-                // Buffer we will write our data blocks into
-                var result = "";
-                // Add the data blocks
-                // Write the buffer such that: block 1 byte 1, block 2 byte 1, etc.
-                var largestBlock = (errorInfo[2] < errorInfo[4] ? errorInfo[4] : errorInfo[2]) + errorInfo[0];
-                for (var i = 0; i < largestBlock; i += 1) {
+                if (!mProgressPayload.hasKey(:current)) {
+                    var errorInfo = mProgressPayload[:errorInfo];
+                    // Add the data blocks
+                    // Write the buffer such that: block 1 byte 1, block 2 byte 1, etc.
+                    var largestBlock = (errorInfo[2] < errorInfo[4] ? errorInfo[4] : errorInfo[2]) + errorInfo[0];
+                    mProgressPayload[:current] = 0;
+                    mProgressPayload[:total] = largestBlock;
+                    mProgressPayload[:result] = "";
+                } else {
+                    var dataBlocks = mProgressPayload[:dataBlocks];
+                    var errorBlocks = mProgressPayload[:errorBlocks];
+                    var errorInfo = mProgressPayload[:errorInfo];
+                    // Buffer we will write our data blocks into
+                    var ib = mProgressPayload[:current];
                     for (var b = 0; b < dataBlocks.size(); b += 1) {
                         var block = dataBlocks[b];
-                        if (i < block.size()) {
-                            var blockItem = block[i];
+                        if (ib < block.size()) {
+                            var blockItem = block[ib];
                             if (blockItem != null) {
-                                result += _binaryString(blockItem, 8);
+                                mProgressPayload[:result] += _binaryString(blockItem, 8);
                             }
                         }
                     }
-                }
-                // Add the error code blocks.
-                // Write the buffer such that: block 1 byte 1, block 2 byte 2, etc.
-                for (var i = 0; i < errorInfo[0]; i += 1) {
-                    for (var b = 0; b < errorBlocks.size(); b += 1) {
-                        var block = errorBlocks[b];
-                        result += _binaryString(block[i], 8);
+                    mProgressPayload[:current] += 1;
+                    if (mProgressPayload[:current] >= mProgressPayload[:total]) {
+                        // Add the error code blocks.
+                        // Write the buffer such that: block 1 byte 1, block 2 byte 2, etc.
+                        for (var i = 0; i < errorInfo[0]; i += 1) {
+                            for (var b = 0; b < errorBlocks.size(); b += 1) {
+                                var block = errorBlocks[b];
+                                mProgressPayload[:result] += _binaryString(block[i], 8);
+                            }
+                        }
+                        mData = mProgressPayload[:result];
+                        $.log("mData: " + mData);
                     }
                 }
-                mData = result;
-                $.log("mData: " + mData);
-                mProgressPayload = {};
                 break;
             }
         }
@@ -505,31 +516,40 @@ class QRCodeBuilder {
     //! This is *very complicated* process. To understand the code you need to read:
     //! * http://www.thonky.com/qr-code-tutorial/part-2-error-correction/
     //! * http://www.matchadesign.com/blog/qr-code-demystified-part-4/
-    private function _makeErrorBlock(block as NumbersOrNulls, blockNumber as Number) as NumbersOrNulls {
-        // Get the error information from the standards table
-        var errorInfo = QRCodeTables.eccwbi[mVersion][QRCodeTables.error[mError]];
-        // This is the number of 8-bit words per block
-        var codeWordsPerBlock = blockNumber < errorInfo[1] ? errorInfo[2] : errorInfo[4];
-        // This is the size of the error block
-        var errorBlockSize = errorInfo[0];
-        // Copy the block as the message polynomial coefficients
-        var msgPolCoeff = block.slice(0, null);
-        // Add the error blocks to the message polynomial
-        msgPolCoeff.addAll(_mult([0], errorBlockSize));
-        // Get the generator polynomial
-        var generator = QRCodeTables.generatorPolynomials[errorBlockSize];
-        // This will hold the temporary sum of the message coefficient and the generator polynomial
-        var genResult = _mult([0], generator.size());
-        // Go through every code word in the block
-        for (var i = 0; i < codeWordsPerBlock; i += 1) {
+    private function _makeErrorBlock(block as NumbersOrNulls, blockNumber as Number) as Void {
+        if (!mProgressPayload.hasKey(:errorBlock)) {
+            // Get the error information from the standards table
+            var errorInfo = QRCodeTables.eccwbi[mVersion][QRCodeTables.error[mError]];
+            // This is the number of 8-bit words per block
+            var codeWordsPerBlock = blockNumber < errorInfo[1] ? errorInfo[2] : errorInfo[4];
+            // This is the size of the error block
+            var errorBlockSize = errorInfo[0];
+            // Copy the block as the message polynomial coefficients
+            var msgPolCoeff = block.slice(0, null);
+            // Add the error blocks to the message polynomial
+            msgPolCoeff.addAll(_mult([0], errorBlockSize));
+            // Get the generator polynomial
+            var generator = QRCodeTables.generatorPolynomials[errorBlockSize];
+            // This will hold the temporary sum of the message coefficient and the generator polynomial
+            var genResult = _mult([0], generator.size());
+
+            mProgressPayload.put(:errorBlock, { :current => 0, :total => codeWordsPerBlock, :msgPolCoeff => msgPolCoeff, :genResult => genResult, :generator => generator });
+        } else {
+            // Go through every code word in the block
+            var i = mProgressPayload[:errorBlock][:current];
+            var msgPolCoeff = mProgressPayload[:errorBlock][:msgPolCoeff];
+            var genResult = mProgressPayload[:errorBlock][:genResult];
+            var generator = mProgressPayload[:errorBlock][:generator];
             // Get the first coefficient from the message polynomial
             var coefficient = msgPolCoeff[0];
-            msgPolCoeff = msgPolCoeff.slice(1, null);
+            mProgressPayload[:errorBlock][:msgPolCoeff] = msgPolCoeff.slice(1, null);
+            msgPolCoeff = mProgressPayload[:errorBlock][:msgPolCoeff];
             // Skip coefficients that are zero
             var alphaExp;
             if (coefficient == 0 or coefficient == null) {
                 alphaExp = null;
-                continue;
+                mProgressPayload[:errorBlock][:current] += 1;
+                return;
             } else {
                 // Turn the coefficient into an alpha exponent
                 $.log("coeff: " + coefficient + ", size: " + QRCodeTables.galoisAntilog.size());
@@ -550,13 +570,18 @@ class QRCodeBuilder {
                     msgPolCoeff[n] = genResultN ^ msgPolCoeffN;
                 }
             }
+            mProgressPayload[:errorBlock][:current] += 1;
         }
-        // Pad the end of the error blocks with zeros if needed
-        if (msgPolCoeff.size() < codeWordsPerBlock) {
-            msgPolCoeff.addAll(_mult([0], (codeWordsPerBlock - msgPolCoeff.size())));
+        if (mProgressPayload[:errorBlock][:current] >= mProgressPayload[:errorBlock][:total]) {
+            var msgPolCoeff = mProgressPayload[:errorBlock][:msgPolCoeff];
+            var codeWordsPerBlock = mProgressPayload[:errorBlock][:total];
+            // Pad the end of the error blocks with zeros if needed
+            if (msgPolCoeff.size() < codeWordsPerBlock) {
+                msgPolCoeff.addAll(_mult([0], (codeWordsPerBlock - msgPolCoeff.size())));
+            }
+            mProgressPayload[:errorBlock][:msgPolCoeff] = msgPolCoeff;
+            $.log("msgPolCoeff: " + msgPolCoeff);
         }
-        $.log("msgPolCoeff: " + msgPolCoeff);
-        return msgPolCoeff;
     }
 
     // ***************************************************************
