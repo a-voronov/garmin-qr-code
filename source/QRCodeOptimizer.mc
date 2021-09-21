@@ -2,13 +2,6 @@ import Toybox.Lang;
 import Toybox.Math;
 import Toybox.Timer;
 
-typedef QRCodeOptimizable as interface {
-    function getStatus() as QRCodeOptimizer.Status;
-    function getResult() as QRCodeOptimizer.Result?;
-    function start(callback as QRCodeOptimizer.Callback) as QRCodeOptimizer.Error?;
-    function stop() as Void;
-};
-
 class QRCodeOptimizer {
     enum Status {
         // Associates with null payload
@@ -143,8 +136,12 @@ class QRCodeOptimizer {
     }
 
     private function _finish(result as Result) as Void {
+        if (mTimer == null) {
+            return;
+        }
         System.println("optimizer finished");
         mTimer.stop();
+        mTimer = null;
         mStatus = FINISHED;
         mResult = result;
         mObservable.notify({ :status => mStatus, :payload => result });
