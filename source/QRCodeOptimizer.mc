@@ -2,13 +2,6 @@ import Toybox.Lang;
 import Toybox.Math;
 import Toybox.Timer;
 
-typedef QRCodeOptimizable as interface {
-    function getStatus() as QRCodeOptimizer.Status;
-    function getResult() as QRCodeOptimizer.Result?;
-    function start(callback as QRCodeOptimizer.Callback) as QRCodeOptimizer.Error?;
-    function stop() as Void;
-};
-
 class QRCodeOptimizer {
     enum Status {
         // Associates with null payload

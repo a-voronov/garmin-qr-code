@@ -34,10 +34,10 @@ module QRCodeSettings {
     }
 
     function getProcessingTimeInterval() as Number {
-        return 100;
+        return 50;
     }
 
     function getBuildingTimeInterval() as Number {
-        return 100;
+        return 50;
     }
 }
