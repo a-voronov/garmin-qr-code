@@ -3,29 +3,38 @@ import Toybox.Lang;
 import Toybox.System;
 
 class QRCodeApp extends Application.AppBase {
-    private var mBuilder as QRCodeBuilder;
+    private var mController as QRCodeController;
+
+    function getQRCodeController() as QRCodeController {
+        return mController;
+    }
 
     function initialize() {
         AppBase.initialize();
 
-        mBuilder = new QRCodeBuilder("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$%*+-./:", QRCodeBuilder.L);
+        mController = new QRCodeController();
     }
 
     function onStart(state as Dictionary?) as Void {
-
+        // TODO: comment these lines if you want to get code entirely from the properties, without demo code.
+        var code = QRCodeSettings.getInputCode();
+        if (code == null or code.length() == 0) {
+            QRCodeSettings.setInputCode(QRCodeSettings.demoCode());
+        }
     }
 
     function onSettingsChanged() as Void {
-        // TODO: re-draw screen with new QR
+        QRCodeSettings.clearCache();
+        mController.restart();
     }
 
     function onStop(state as Dictionary?) as Void {
         $.log("app.stopped");
-        mBuilder.stop();
+        mController.stop();
     }
 
     function getInitialView() as Array<Views or InputDelegates>? {
-        return [ new QRCodeView(mBuilder), new QRCodeDelegate() ] as Array<Views or InputDelegates>;
+        return [ new QRCodeView(mController), new QRCodeDelegate() ] as Array<Views or InputDelegates>;
     }
 }
 
@@ -34,5 +43,5 @@ function getApp() as QRCodeApp {
 }
 
 function log(msg as String) as Void {
-    // System.println(msg);
+    System.println(msg);
 }

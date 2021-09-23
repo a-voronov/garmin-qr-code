@@ -77,6 +77,7 @@ class QRCodeBuilder {
         mVersion = _bestVersion();
         mObservable = new Observable();
         mStatus = IDLE;
+        mProgressPayload = {};
 
         $.log("mVersion: " + mVersion);
     }
@@ -127,12 +128,15 @@ class QRCodeBuilder {
         return null;
     }
 
+    //! Will become STOPPED only if IDLE or STARTED
     public function stop() as Void {
-        if (mTimer == null) {
+        if (mStatus == FINISHED or mStatus == STOPPED) {
             return;
         }
+        if (mTimer != null) {
+            mTimer.stop();
+        }
         $.log("builder stopped");
-        mTimer.stop();
         mTimer = null;
         mProgress = null;
         mProgressPayload = {};
@@ -162,8 +166,8 @@ class QRCodeBuilder {
     }
 
     private function _progress() as Float {
-        var subCurrent = mProgressPayload[:current];
-        var subTotal = mProgressPayload[:total];
+        var subCurrent = mProgressPayload[:current] as Number?;
+        var subTotal = mProgressPayload[:total] as Number?;
         var subProgress = 0;
         if (subTotal != null and subCurrent != null) {
             subProgress = ((subCurrent.toFloat() / subTotal) * 100) / mStepsToFinish;
@@ -228,6 +232,9 @@ class QRCodeBuilder {
     private function _iterateAddData() as Void {
         switch (mProgress) {
             case ADD_DATA_PREPARE: {
+                if (mInput.length() == 0) {
+                    throw new Lang.SerializationException("The supplied data will not fit within this version of a QRCode.");
+                }
                 $.log("ADD_DATA_PREPARE");
                 // Encode the data into a QR code
                 mData += _binaryString(mMode, 4);

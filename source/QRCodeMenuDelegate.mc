@@ -10,6 +10,7 @@ class QRCodeMenuDelegate extends WatchUi.MenuInputDelegate {
     function onMenuItem(item as Symbol) as Void {
         if (item == :itemClearCache) {
             QRCodeSettings.clearCache();
+            $.getApp().getQRCodeController().restart();
         } else if (item == :itemTryLargerFont) {
             QRCodeSettings.setIsUsingLargerFont(true);
         } else if (item == :itemTrySmallerFont) {

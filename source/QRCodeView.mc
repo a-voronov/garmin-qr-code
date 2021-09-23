@@ -9,13 +9,12 @@ class QRCodeView extends WatchUi.View {
     private var mProcessingImg as BitmapResource;
 
     private var mFonts = [16];
-    private var mOptimizer as QRCodeOptimizer?;
-    private var mBuilder as QRCodeBuilder;
+    private var mController as QRCodeController;
     private var mProgressBar as WatchUi.ProgressBar?;
 
-    function initialize(builder as QRCodeBuilder) {
+    function initialize(controller as QRCodeController) {
         View.initialize();
-        mBuilder = builder;
+        mController = controller;
 
         mErrorMsg = WatchUi.loadResource($.Rez.Strings.ErrorPrompt);
         mErrorImg = WatchUi.loadResource($.Rez.Drawables.ErrorIcon);
@@ -61,40 +60,16 @@ class QRCodeView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_WHITE);
         dc.clear();
 
-        var cachedCode = QRCodeSettings.getCachedCode();
-        if (cachedCode != null) {
-            _drawQRText(cachedCode, dc);
-            return;
+        if (mController.start() == null) {
+            mController.subscribe(weak(), :_handleControllerStatus);
         }
 
-        // Build code
-        if (mBuilder.getStatus() == QRCodeBuilder.IDLE and mBuilder.start() == null) {
-            mBuilder.subscribe(weak(), :_handleBuilderStatus);
-            mProgressBar = new WatchUi.ProgressBar("1/2 " + mProcessingMsg, 0);
-            WatchUi.pushView(mProgressBar, new $.ProgressDelegate(method(:_stopBuilder)), WatchUi.SLIDE_BLINK);
-        }
-        if (mBuilder.getStatus() != QRCodeBuilder.FINISHED) {
-            return;
-        }
-
-        // Optimize code
-        var builtCode = mBuilder.getResult();
-        if (mOptimizer == null and builtCode instanceof Array) {
-            mOptimizer = new QRCodeOptimizer(builtCode);
-        }
-        if (mOptimizer != null and mOptimizer.getStatus() == QRCodeOptimizer.IDLE and mOptimizer.start() == null) {
-            mOptimizer.subscribe(weak(), :_handleOptimizerStatus);
-            mProgressBar = new WatchUi.ProgressBar("2/2 " + mProcessingMsg, 0);
-            WatchUi.pushView(mProgressBar, new $.ProgressDelegate(method(:_stopOptimizer)), WatchUi.SLIDE_BLINK);
-        }
-
-        // Render result
-        if (mOptimizer.getStatus() == QRCodeOptimizer.FINISHED) {
-            _drawQRText(mOptimizer.getResult(), dc);
+        if (mController.getStatus() == QRCodeController.FINISHED) {
+            _drawQRText(mController.getResult(), dc);
         }
     }
 
-    private function _drawQRText(result as QRCodeOptimizer.Result or Float or Null, dc as DC) as Void {
+    private function _drawQRText(result as QRCodeController.Result or Float or Null, dc as DC) as Void {
         if ((result instanceof Array) and result.size() > 0) {
             var params = _getDrawingParams(dc, result[0].length());
             var font = mFonts[params[:charSize] - 1];
@@ -122,37 +97,27 @@ class QRCodeView extends WatchUi.View {
         dc.drawBitmap(centerX - image.getWidth() / 2, centerY + 5, image);
     }
 
-    function _handleOptimizerStatus(args as { :status as QRCodeOptimizer.Status, :payload as Float or QRCodeOptimizer.Result}) as Void {
+    function _handleControllerStatus(args as { :status as QRCodeController.Status, :payload as Float or QRCodeController.Result}) as Void {
         var status = args[:status];
         var payload = args[:payload];
-        if (status == QRCodeOptimizer.STARTED and payload instanceof Float) {
+
+        if ((status == QRCodeController.STARTED) and (payload instanceof Float)) {
+            if (mProgressBar == null) {
+                mProgressBar = new WatchUi.ProgressBar(mProcessingMsg, 0);
+                WatchUi.pushView(mProgressBar, new $.ProgressDelegate(method(:_stopController)), WatchUi.SLIDE_BLINK);
+            }
             mProgressBar.setProgress(payload);
-        } else if (status == QRCodeOptimizer.FINISHED) {
-            WatchUi.popView(WatchUi.SLIDE_BLINK);
-            QRCodeSettings.setCachedCode(payload);
-        } else if (status == QRCodeOptimizer.STOPPED) {
-            WatchUi.popView(WatchUi.SLIDE_BLINK);
+        } else if ((status == QRCodeController.FINISHED) or (status == QRCodeController.STOPPED)) {
+            if (mProgressBar != null) {
+                WatchUi.popView(WatchUi.SLIDE_BLINK);
+                mProgressBar = null;
+            }
+            WatchUi.requestUpdate();
         }
     }
 
-    function _handleBuilderStatus(args as { :status as QRCodeBuilder.Status, :payload as Float or QRCodeBuilder.Result}) as Void {
-        var status = args[:status];
-        var payload = args[:payload];
-        if (status == QRCodeBuilder.STARTED and payload instanceof Float) {
-            mProgressBar.setProgress(payload);
-        } else if (status == QRCodeBuilder.FINISHED) {
-            WatchUi.popView(WatchUi.SLIDE_BLINK);
-        } else if (status == QRCodeBuilder.STOPPED) {
-            WatchUi.popView(WatchUi.SLIDE_BLINK);
-        }
-    }
-
-    function _stopOptimizer() {
-        mOptimizer.stop();
-    }
-
-    function _stopBuilder() {
-        mBuilder.stop();
+    function _stopController() {
+        mController.stop();
     }
 
     // TODO: simplify _getDrawingParams to return center x, y instead of origin

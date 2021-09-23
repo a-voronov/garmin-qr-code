@@ -2,7 +2,7 @@ import Toybox.Lang;
 import Toybox.Math;
 import Toybox.Timer;
 
-class QRCodeOptimizer {
+class QRCodeFormatter {
     enum Status {
         // Associates with null payload
         IDLE, STOPPED,
@@ -19,7 +19,6 @@ class QRCodeOptimizer {
     }
 
     typedef Result as Array<String> or Error;
-    typedef Callback as Method(status as Status, payload as Float or Result) as Void;
 
     private var mStatus as Status;
     private var mIteration as Number;
@@ -78,11 +77,13 @@ class QRCodeOptimizer {
     }
 
     public function stop() as Void {
-        if (mTimer == null) {
+        if (mStatus == FINISHED or mStatus == STOPPED) {
             return;
         }
-        System.println("optimizer stopped");
-        mTimer.stop();
+        if (mTimer != null) {
+            mTimer.stop();
+        }
+        $.log("formatter stopped");
         mTimer = null;
         mStatus = STOPPED;
         mIteration = 0;
@@ -139,7 +140,7 @@ class QRCodeOptimizer {
         if (mTimer == null) {
             return;
         }
-        System.println("optimizer finished");
+        $.log("formatter finished");
         mTimer.stop();
         mTimer = null;
         mStatus = FINISHED;
